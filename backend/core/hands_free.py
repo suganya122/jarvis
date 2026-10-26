@@ -27,6 +27,7 @@ from core.hands_free_turns import TurnsMixin
 from core.hands_free_types import (
     ACK,
     END_ACK,
+    ENGINE_RETRY_S,
     FINAL_WAIT_S,
     GATE_HANG_S,
     OFFLINE_ACK,
@@ -70,6 +71,8 @@ class HandsFree(TurnsMixin):
         self._spec: asyncio.Task[object | None] | None = None
         self._spec_text = ""
         self._tasks: set[asyncio.Future[None]] = set()
+        self._engine_problem: tuple[str, float] | None = None
+        self._told = ""
 
     # ---- lifecycle and inputs -----------------------------------------------------
 
@@ -117,6 +120,8 @@ class HandsFree(TurnsMixin):
             return "paused"
         if not self._d.stt_ready():
             return "needs a speech model: download one in Settings → Voice"
+        if self._engine_problem and self._d.clock() - self._engine_problem[1] < ENGINE_RETRY_S:
+            return self._engine_problem[0]
         if self._d.ears.available is not True:
             return self._d.ears.detail or "no microphone"
         return None
@@ -127,6 +132,9 @@ class HandsFree(TurnsMixin):
                 problem = self._blocker()
                 if problem is not None:
                     await self._idle_off(problem)
+                    if self._engine_problem and problem == self._engine_problem[0] != self._told:
+                        self._told = problem  # said once, not every retry
+                        await self._say(problem)
                     await asyncio.sleep(POLL_S)
                     continue
                 if not self._mic_on:
@@ -275,6 +283,9 @@ class HandsFree(TurnsMixin):
                         await self._d.screen.level(level)
                 elif kind == "stt":
                     event: TranscriptEvent = data
+                    if event.error:
+                        self._engine_problem = (event.error, now)
+                        return None
                     if event.kind == "final":
                         final = event.text
                         break

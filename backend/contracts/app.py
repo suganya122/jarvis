@@ -14,4 +14,4 @@ APP_ID: Final = "local-assistant"
 ENV_PREFIX: Final = "ASSISTANT_"
 """Prefix for every environment variable the app reads."""
 
-APP_VERSION: Final = "0.1.3"
+APP_VERSION: Final = "0.1.4"

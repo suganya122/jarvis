@@ -3,6 +3,7 @@
 //   in:  {"type":"open","id":"s1","rate":16000}  {"type":"audio","id":"s1","pcm_b64":"…"}
 //        {"type":"close","id":"s1","abort":false}
 //   out: {"type":"ready","ok":true,"detail":"…"}  {"type":"partial"|"final","id":"s1","text":"…"}
+//        {"type":"error","id":"s1","text":"…"} (something only the person can fix, e.g. Dictation is off)
 import AVFoundation
 import Foundation
 import Speech
@@ -127,6 +128,13 @@ final class SpeechServer {
                         self.emit(["type": "partial", "id": id, "text": text])
                     }
                 } else if let error = error {
+                    if let problem = Self.problem(error) {  // retrying can't help: tell the person
+                        Self.log("speech: \(error.localizedDescription)")
+                        stream.done = true
+                        self.streams[id] = nil
+                        self.emit(["type": "error", "id": id, "text": problem])
+                        return
+                    }
                     if !stream.closing && !stream.restarted {  // once per utterance: the log stays short
                         stream.restarted = true
                         Self.log("speech: Apple ended a recognition task (\(error.localizedDescription)); listening on")
@@ -151,6 +159,16 @@ final class SpeechServer {
         stream.done = true
         streams[id] = nil
         emit(["type": "final", "id": id, "text": stream.last])
+    }
+
+    /// A failure only the person can fix, in words Jarvis can say aloud; nil for the ordinary ones
+    /// (no speech for a while, a pause, the time limit) that a new task gets past.
+    private static func problem(_ error: Error) -> String? {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("dictation") || text.contains("siri") {
+            return "Dictation is off, so I can't hear you. Turn it on in System Settings, Keyboard, Dictation."
+        }
+        return nil
     }
 
     private static func joined(_ before: String, _ more: String) -> String {

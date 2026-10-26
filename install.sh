@@ -100,8 +100,12 @@ if [ ! -x "$UV" ] || [ "$("$UV" --version 2>/dev/null | cut -d' ' -f2)" != "$UV_
 fi
 export UV_PYTHON_INSTALL_DIR="$PREFIX/python" UV_NO_CONFIG=1
 say "Setting up Python 3.12…"
-"$UV" venv --quiet --allow-existing --python 3.12 "$PREFIX/venv"
+# Always uv's own Python: one found on the machine (e.g. Homebrew's) may lack Tk, the on-screen box.
 PY="$PREFIX/venv/bin/python"
+if [ -x "$PY" ] && ! "$PY" -c 'import tkinter' >/dev/null 2>&1; then
+  rm -rf "$PREFIX/venv"  # made with a Python without Tk by an earlier install
+fi
+"$UV" venv --quiet --allow-existing --python 3.12 --python-preference only-managed "$PREFIX/venv"
 
 # ---- 4. Jarvis itself -------------------------------------------------------------------
 if [ -n "${JARVIS_WHEEL:-}" ]; then

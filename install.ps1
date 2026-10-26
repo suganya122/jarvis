@@ -53,7 +53,7 @@ try {
     $env:UV_PYTHON_INSTALL_DIR = Join-Path $Prefix "python"
     $env:UV_NO_CONFIG = "1"
     Say "Setting up Python 3.12..."
-    & $Uv venv --quiet --allow-existing --python 3.12 (Join-Path $Prefix "venv")
+    & $Uv venv --quiet --allow-existing --python 3.12 --python-preference only-managed (Join-Path $Prefix "venv")
     $Py = Join-Path $Prefix "venv\Scripts\python.exe"
     $Pyw = Join-Path $Prefix "venv\Scripts\pythonw.exe"
 

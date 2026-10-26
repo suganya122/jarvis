@@ -18,6 +18,8 @@ for line in sys.stdin:
     msg = json.loads(line)
     if msg["type"] == "open":
         heard[msg["id"]] = 0
+    elif msg["type"] == "audio" and {dictation_off}:
+        print(json.dumps({{"type": "error", "id": msg["id"], "text": "Dictation is off"}}), flush=True)
     elif msg["type"] == "audio":
         heard[msg["id"]] += 1
         words = ["Jarvis", "Jarvis what", "Jarvis what time"][min(heard[msg["id"]], 3) - 1]
@@ -28,9 +30,9 @@ for line in sys.stdin:
 """
 
 
-def helper(tmp_path: Path, ok: bool = True) -> str:
+def helper(tmp_path: Path, ok: bool = True, dictation_off: bool = False) -> str:
     path = tmp_path / "Jarvis"
-    path.write_text(FAKE_HELPER.format(python=sys.executable, ok="True" if ok else "False"))
+    path.write_text(FAKE_HELPER.format(python=sys.executable, ok=ok, dictation_off=dictation_off))
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     return str(path)
 
@@ -70,3 +72,19 @@ def test_without_permission_it_says_how_to_allow_it(tmp_path: Path) -> None:
     _wait_ready(stt)
     with pytest.raises(SttError, match="Speech Recognition"):
         stt.open("s1", 16_000)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a script helper needs a POSIX shebang")
+def test_dictation_off_comes_back_as_an_error_not_silence(tmp_path: Path) -> None:
+    import time
+
+    stt = AppleSpeechToText(helper(tmp_path, dictation_off=True))
+    _wait_ready(stt)
+    stt.open("s1", 16_000)
+    events = stt.feed("s1", b"\x00\x00" * 1600)
+    for _ in range(40):
+        if events:
+            break
+        time.sleep(0.05)
+        events = stt.feed("s1", b"\x00\x00" * 10)
+    assert [(e.kind, e.error) for e in events] == [("final", "Dictation is off")]

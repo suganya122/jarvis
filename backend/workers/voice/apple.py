@@ -46,6 +46,12 @@ class AppleSpeechToText:
                 continue
             stream_id = str(msg.get("id", ""))
             kind = msg.get("type")
+            if kind == "error" and stream_id in self._events:  # e.g. Dictation is off: say why
+                problem = str(msg.get("text", ""))
+                self._events[stream_id].put(
+                    TranscriptEvent(stream_id=stream_id, kind="final", text="", ms=-1, error=problem)
+                )
+                continue
             if kind in ("partial", "final") and stream_id in self._events:
                 event = TranscriptEvent(stream_id=stream_id, kind=kind, text=str(msg.get("text", "")).lower())
                 self._events[stream_id].put(event)
@@ -74,7 +80,7 @@ class AppleSpeechToText:
         events = self._events.get(stream_id)
         while events is not None and not events.empty():
             event = events.get_nowait()
-            if event.kind == "final":  # Apple finished on its own (a long pause): keep it as a segment
+            if event.kind == "final" and not event.error:  # finished on its own: keep it as a segment
                 event = event.model_copy(update={"kind": "segment"})
             found.append(event)
         return found
@@ -92,6 +98,8 @@ class AppleSpeechToText:
                 except queue.Empty:
                     continue
                 text = event.text or text
+                if event.error:
+                    raise SttError(event.error)
                 if event.kind == "final":
                     break
         finally:

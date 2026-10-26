@@ -51,6 +51,7 @@ class FakeRecognizer:
         self.opened: list[str] = []
         self.closed: list[tuple[str, bool]] = []
         self.fed = 0
+        self.problem = ""  # set: the engine reports this instead of hearing anything
 
     async def open(self, stream_id: str) -> None:
         self.opened.append(stream_id)
@@ -58,6 +59,10 @@ class FakeRecognizer:
 
     async def feed(self, stream_id: str, pcm_b64: str) -> None:
         self.fed += 1
+        if self.problem and self.hf is not None:
+            event = TranscriptEvent(stream_id=stream_id, kind="final", text="", ms=-1, error=self.problem)
+            self.hf.on_transcript(event)
+            return
         if self.text and self.text != self.sent and self.hf is not None:
             self.sent = self.text
             self.hf.on_transcript(TranscriptEvent(stream_id=stream_id, kind="partial", text=self.text))
@@ -520,5 +525,26 @@ def test_a_pause_starts_the_model_early_and_the_request_uses_it(monkeypatch: pyt
             assert rig.speculated == ["what time is it"]  # the wake word isn't part of the request
             assert rig.used_speculation == ["spec:what time is it"]  # the head start was used
             assert rig.discarded == []
+
+    asyncio.run(run())
+
+
+def test_a_speech_engine_problem_is_said_once_and_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dictation off on a Mac: say why it can't hear (once), show it, and try again later."""
+    monkeypatch.setattr(hands_free, "ENGINE_RETRY_S", 0.5)
+
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        rig.rec.problem = "Dictation is off, so I can't hear you."
+        async with rig.running():
+            await rig.speak("jarvis what time is it")
+            await rig.until(lambda: rig.hf.state == "off")
+            assert rig.hf.detail == rig.rec.problem
+            await rig.until(lambda: rig.ears.said == [rig.rec.problem])
+            rig.rec.problem = ""  # turned on: after the retry wait it hears again
+            await rig.until(lambda: rig.hf.state == "idle", timeout=6.0)
+            await rig.speak("jarvis what time is it")
+            await rig.until(lambda: rig.ears.said[-1:] == ["It is noon."])
+            assert rig.ears.said.count("Dictation is off, so I can't hear you.") == 1
 
     asyncio.run(run())

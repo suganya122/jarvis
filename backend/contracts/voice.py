@@ -19,6 +19,8 @@ class TranscriptEvent(ContractModel):
     text: str
     ms: float = 0.0
     """Engine processing time for the chunk that produced this event."""
+    error: str = ""
+    """On a final: why recognition stopped, said so a person can fix it (e.g. Dictation is off)."""
 
 
 @runtime_checkable

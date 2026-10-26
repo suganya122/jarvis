@@ -29,6 +29,8 @@ PREROLL_FRAMES = 5
 QUIET_FOR_S = 0.8
 SPEAK_TAIL_S = 0.5
 SESSION_TTL_S = 600.0
+ENGINE_RETRY_S = 30.0
+"""After the speech engine reports a problem (e.g. Dictation is off), try it again this often."""
 SPECULATE_PAUSE_S = 0.7
 """A pause this long, mid-request, starts the model early (see HandsFreeDeps.speculate)."""
 FINAL_WAIT_S = 3.0

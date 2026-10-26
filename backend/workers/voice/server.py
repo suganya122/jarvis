@@ -64,7 +64,7 @@ class VoiceServer(Server):
         self.write(Transcript(event=event))
 
     def _error(self, stream_id: str, message: str) -> None:
-        self._emit(TranscriptEvent(stream_id=stream_id, kind="final", text="", ms=-1))
+        self._emit(TranscriptEvent(stream_id=stream_id, kind="final", text="", ms=-1, error=message))
         print(f"voice worker: {message}", file=sys.stderr)
 
     async def _audio(self, msg: AudioOpen | AudioChunk | AudioClose) -> None:
@@ -75,7 +75,11 @@ class VoiceServer(Server):
             if env.stt is None:
                 self._emit(TranscriptEvent(stream_id=msg.id, kind="final", text="", ms=-1))
                 return
-            env.stt.open(msg.id, msg.sample_rate)
+            try:
+                env.stt.open(msg.id, msg.sample_rate)
+            except SttError as exc:
+                self._error(msg.id, str(exc))
+                return
             queue: asyncio.Queue[bytes | None] = asyncio.Queue()
             env.queues[msg.id] = queue
             task = asyncio.create_task(self._pump(env, msg.id, queue))
