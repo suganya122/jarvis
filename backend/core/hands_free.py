@@ -29,6 +29,7 @@ from core.hands_free_types import (
     END_ACK,
     FINAL_WAIT_S,
     GATE_HANG_S,
+    OFFLINE_ACK,
     POLL_S,
     PREROLL_FRAMES,
     QUIET_FOR_S,
@@ -40,7 +41,7 @@ from core.hands_free_types import (
     HandsFreeState,
     NoiseFloor,
 )
-from core.speech_text import could_be_wake, is_end_phrase, match_wake, speakable
+from core.speech_text import could_be_wake, is_end_phrase, is_filler, is_go_offline, match_wake, speakable
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class HandsFree(TurnsMixin):
         self._woken = False
         self.floor = NoiseFloor()
         self._speak_lock = asyncio.Lock()
+        self._offline = False
         self._tasks: set[asyncio.Future[None]] = set()
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -95,6 +97,11 @@ class HandsFree(TurnsMixin):
         if self._mic_on:
             await self._d.ears.listen(False)
             await self._d.ears.listen(True)
+
+    def go_offline(self) -> None:
+        """End a live session (the menu's "Go offline"): back to waiting for "Hey Jarvis"."""
+        self._offline = True
+        self._inbox.put_nowait(("offline", None))
 
     def finish_now(self) -> None:
         """The talk key was let go: what was said so far is the request, no silence wait."""
@@ -157,7 +164,7 @@ class HandsFree(TurnsMixin):
                 if not self._mic_on:
                     await self._d.ears.listen(True)
                     self._mic_on = True
-                self._set("idle", f"listening for “{self._wake_word()}”")
+                self._set("idle", f"waiting for “Hey {self._wake_word().title()}”")
                 await self._cycle()
             except asyncio.CancelledError:
                 raise
@@ -199,29 +206,42 @@ class HandsFree(TurnsMixin):
         """ack: say "Yes?" when called by name alone. The talk key skips it: the box already
         shows it's listening, and every spoken word costs time."""
         silence_s = self._d.settings().silence_s
+        live = self._d.settings().stay_live
+        self._offline = False
+        pending: str | None = text
         while True:
-            if not text:
+            if pending is None:  # live and nothing (usable) heard: keep listening
+                pass
+            elif not pending:
                 if ack:
                     await self._say(ACK)
                 ack = True
-            elif is_end_phrase(text):
+            elif live and is_go_offline(pending):
+                await self._say(OFFLINE_ACK)
+                return
+            elif live and is_end_phrase(pending):
+                await self._say("You're welcome.")  # politeness doesn't end a live session
+            elif not live and is_end_phrase(pending):
                 await self._say(END_ACK)
                 return
-            else:
-                reply = await self._turn(text)
+            elif not (live and is_filler(pending)):
+                reply = await self._turn(pending)
                 if reply:
                     await self._say(reply)
-            if self._blocker() is not None:
+            if self._blocker() is not None or self._offline:
                 return
-            await self._d.screen.voice_show("listening", status="Go ahead…")
+            status = "Live: just talk. Say “go offline” to stop." if live else "Go ahead…"
+            await self._d.screen.voice_show("listening", status=status)
             self.state = "listening"
-            heard = await self._hear(
-                wake=False, first_word_s=self._d.settings().follow_up_s, silence_s=silence_s
-            )
+            follow_up = None if live else self._d.settings().follow_up_s
+            heard = await self._hear(wake=False, first_word_s=follow_up, silence_s=silence_s)
             if heard is None:
+                if live and not self._offline and self._blocker() is None:
+                    pending = None
+                    continue
                 return
             addressed, rest = match_wake(heard, self._wake_word())
-            text = rest if addressed else heard
+            pending = rest if addressed else heard
 
     # ---- hearing ------------------------------------------------------------------------
 
@@ -251,6 +271,8 @@ class HandsFree(TurnsMixin):
                     return None
                 if kind == "wake" and wake:
                     return None  # the shortcut was pressed: _cycle starts a conversation
+                if kind == "offline" and not wake:
+                    return None
                 if kind == "finish":
                     if not text:
                         return None  # let go before saying anything
@@ -259,9 +281,9 @@ class HandsFree(TurnsMixin):
                 if kind == "frame":
                     pcm_b64, level = data
                     self.floor.update(level)
-                    if not wake or addressed:
+                    if (not wake or addressed) and text:
                         await self._d.recognizer.feed(stream, pcm_b64)
-                    else:  # waiting for the wake word: only send sound, with a little lead-in
+                    else:  # nothing heard yet: only send sound, with a little lead-in
                         if level >= self.floor.gate():
                             if now >= gate_until:
                                 for old in preroll:

@@ -151,3 +151,49 @@ class SentenceSplitter:
     def flush(self) -> str:
         rest, self._buffer = self._buffer.strip(), ""
         return rest
+
+
+OFFLINE_PHRASES = {
+    "go offline", "offline", "go to standby", "standby", "go to sleep", "sleep", "stop listening",
+    "thats all", "that is all", "that will be all", "goodbye", "good bye", "bye", "you can go",
+    "go offline now", "turn off", "stop",
+}  # fmt: skip
+"""In a live session, only these end it (back to waiting for "Hey Jarvis")."""
+FILLERS = {
+    "um",
+    "uh",
+    "hmm",
+    "hm",
+    "ah",
+    "oh",
+    "ok",
+    "okay",
+    "yeah",
+    "mm",
+    "huh",
+    "the",
+    "a",
+    "so",
+    "and",
+    "er",
+}
+
+
+GOODBYE_WORDS = {"all", "bye", "goodbye", "offline", "sleep", "standby", "done", "nothing"}
+"""In a closing phrase, these make it a goodbye ("that's all, thanks"); plain "thanks" isn't one."""
+
+
+def is_go_offline(text: str) -> bool:
+    spoken = words(text)
+    joined = " ".join(spoken)
+    if joined in OFFLINE_PHRASES:
+        return True
+    if spoken[-2:] == ["go", "offline"] and len(spoken) <= 5:  # "okay jarvis go offline"
+        return True
+    return is_end_phrase(text) and bool(set(spoken) & GOODBYE_WORDS)
+
+
+def is_filler(text: str) -> bool:
+    """Not a request: a stray "um", "okay", or a word the recogniser made of a noise."""
+    spoken = words(text)
+    return not spoken or all(w in FILLERS for w in spoken)

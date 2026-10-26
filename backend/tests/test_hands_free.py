@@ -97,7 +97,7 @@ class FakeScreen:
 
 
 class Rig:
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, live: bool = False) -> None:
         monkeypatch.setattr(hands_free, "TICK_S", 0.02)
         monkeypatch.setattr(hands_free, "SPEAK_TAIL_S", 0.0)
         monkeypatch.setattr(hands_free, "STALLED_EXTRA_S", 5.0)
@@ -111,7 +111,7 @@ class Rig:
         self.turn_script: Callable[[Callable[[ServerMessage], Awaitable[None]]], Awaitable[None]] | None = (
             None
         )
-        voice = VoiceSettings.model_construct(silence_s=0.15, follow_up_s=0.5)
+        voice = VoiceSettings.model_construct(silence_s=0.15, follow_up_s=0.5, stay_live=live)
         self.hf = HandsFree(
             HandsFreeDeps(
                 ears=self.ears,
@@ -446,5 +446,48 @@ def test_letting_go_of_the_talk_key_sends_at_once(monkeypatch: pytest.MonkeyPatc
             rig.hf.finish_now()  # …but the key was let go
             await rig.until(lambda: len(rig.turns) == 1, timeout=2)
             assert asyncio.get_running_loop().time() - started < 1.0
+
+    asyncio.run(run())
+
+
+def test_a_live_session_stays_on_until_go_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+        async with rig.running():
+            await rig.speak("hey jarvis what time is it")
+            await rig.until(lambda: rig.ears.said == ["It is noon."])
+            rig.rec.text = ""
+            await asyncio.sleep(1.5)  # far past follow_up_s (0.5 s): still live, no wake word needed
+            assert rig.hf.state == "listening"
+            await rig.speak("um")  # a stray sound isn't a request
+            await asyncio.sleep(0.4)
+            assert len(rig.turns) == 1
+            rig.rec.text = ""
+            await rig.speak("and what's the date")
+            await rig.until(lambda: len(rig.turns) == 2)
+            rig.rec.text = ""
+            await rig.until(lambda: rig.hf.state == "listening")
+            await rig.speak("thanks")  # politeness doesn't end it
+            await rig.until(lambda: rig.ears.said[-1] == "You're welcome.")
+            rig.rec.text = ""
+            await rig.until(lambda: rig.hf.state == "listening")
+            await rig.speak("go offline")
+            await rig.until(lambda: rig.ears.said[-1].startswith("Going offline"))
+            await rig.until(lambda: rig.hf.state == "idle")  # back to waiting for "Hey Jarvis"
+            assert [t for t, _ in rig.turns] == ["what time is it", "and what's the date"]
+
+    asyncio.run(run())
+
+
+def test_the_menus_go_offline_ends_a_live_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+        async with rig.running():
+            await rig.speak("hey jarvis hello there")
+            await rig.until(lambda: len(rig.ears.said) == 1)
+            rig.rec.text = ""
+            await rig.until(lambda: rig.hf.state == "listening")
+            rig.hf.go_offline()
+            await rig.until(lambda: rig.hf.state == "idle")
 
     asyncio.run(run())

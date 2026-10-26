@@ -267,7 +267,7 @@ def hint(view: OverlayView) -> str:
     if view.approval:
         return "Click here, then Y or N. Your approve and deny shortcuts work too."
     if view.phase == "listening" and view.auto_send:
-        return "Stop talking to run it, or press your voice shortcut again."
+        return "Pause to send. Say “go offline” when you're done."
     if view.phase == "listening":
         return "Press your voice shortcut again to run it."
     if view.phase in ACTIVE:

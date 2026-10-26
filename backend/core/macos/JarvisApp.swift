@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(stateItem)
         menu.addItem(.separator())
         menu.addItem(item("Talk (hold ⌃⌥Space)", #selector(talk)))
+        menu.addItem(item("Go offline", #selector(goOffline)))
         pauseItem.target = self
         menu.addItem(pauseItem)
         menu.addItem(item("Settings…", #selector(openSettings), key: ","))
@@ -146,7 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let busy = ["listening", "thinking", "speaking", "approval"].contains(state)
                 self.statusItem.button?.image = Self.orb(filled: busy)
                 switch state {
-                case "idle": self.stateItem.title = "Listening for “Jarvis”"
+                case "idle": self.stateItem.title = "Waiting for “Hey Jarvis”"
+                case "listening": self.stateItem.title = "Live: just talk"
                 case "off": self.stateItem.title = "Off: \(detail)"
                 case "starting": self.stateItem.title = "Starting…"
                 default: self.stateItem.title = state.capitalized + "…"
@@ -157,6 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func talk() {
         Assistant.post("/api/voice/command", ["action": "toggle_chat"])
+    }
+
+    @objc private func goOffline() {
+        Assistant.post("/api/voice/command", ["action": "offline"])
     }
 
     @objc private func togglePause() {

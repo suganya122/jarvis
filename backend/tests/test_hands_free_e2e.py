@@ -131,8 +131,8 @@ def test_a_spoken_conversation_end_to_end(daemon: Daemon) -> None:
         reply
     )  # said like a person
 
-    # "That's all, thanks." (a follow-up, no wake word) -> "Okay.", then back to waiting
-    daemon.wait("'Okay.'", lambda: daemon.spoken()[-1:] == ["Okay."])
+    # "That's all, thanks." (still live: no wake word needed) -> goes offline, back to waiting
+    daemon.wait("going offline", lambda: daemon.spoken()[-1].startswith("Going offline"))
     daemon.wait("back to waiting", lambda: daemon.state() == "idle", timeout=30)
 
     sessions = daemon.api("GET", "/api/sessions")

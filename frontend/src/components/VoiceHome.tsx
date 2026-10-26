@@ -4,8 +4,8 @@ import type { HandsFreeStatus, SessionInfo } from "../contracts";
 
 const HEADLINE: Record<HandsFreeStatus["state"], (wake: string) => string> = {
   off: () => "Voice is off",
-  idle: (wake) => `Say “${wake}”`,
-  listening: () => "Listening…",
+  idle: (wake) => `Say “Hey ${wake}”`,
+  listening: () => "Live: just talk",
   thinking: () => "Working on it…",
   speaking: () => "Speaking…",
   approval: () => "Waiting for your OK",
@@ -78,10 +78,10 @@ export function VoiceHome({ api, wakeWord, sessions, onOpenHistory, onOpenSettin
       </p>
       {wakeWord && (
       <ul className="home-examples" aria-label="Things to say">
-        <li>“{wake}, what time is it?”</li>
-        <li>“{wake}, open Firefox.”</li>
-        <li>“{wake}, what's on my screen?”</li>
-        <li>Then keep talking. “That's all” when you're done.</li>
+        <li>“Hey {wake}, what time is it?”</li>
+        <li>“Hey {wake}, book a flight from Chennai to Delhi on Friday.”</li>
+        <li>“Hey {wake}, Chrome on the left, Terminal on the right.”</li>
+        <li>Then keep talking: it stays live until you say “go offline”.</li>
       </ul>
       )}
       {status && <p className="hint">Voice: {status.voice}. Everything you say is recognised on this computer.</p>}

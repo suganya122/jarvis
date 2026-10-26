@@ -87,7 +87,7 @@ def test_colour_blending_and_reduced_motion_override(monkeypatch: pytest.MonkeyP
 
 def test_the_hint_says_what_to_do_next() -> None:
     assert "again to run it" in hint(OverlayView(phase="listening"))
-    assert hint(OverlayView(phase="listening", auto_send=True)).startswith("Stop talking to run it")
+    assert hint(OverlayView(phase="listening", auto_send=True)).startswith("Pause to send")
     assert hint(OverlayView(phase="done")) == ""
     assert "browser" in hint(OverlayView(phase="needs_chat"))
 

@@ -63,8 +63,8 @@ microphone) or `wmctrl` is missing. Run the same command again to update. Uninst
 1. Paste your Anthropic API key into `.env` (created for you on first start, next to
    `backend/`): `ANTHROPIC_API_KEY=sk-ant-…`. It stays on this computer and is never logged.
 2. Start it: `cd backend && .venv/bin/python -m core`. No browser needed.
-3. Say **"Jarvis, what time is it?"**, or just "Jarvis" and wait for "Yes?". Keep talking
-   after it answers (no wake word needed for a few seconds). Say "that's all" to finish.
+3. Say **"Hey Jarvis, what time is it?"** (on a Mac you can also hold ⌃⌥Space). It stays
+   **live**: keep talking, no wake word needed, until you say **"go offline"**.
 
 - **Approvals:** ordinary changes can be answered "yes" or "no". Sending and buying always
   need a click on the small window it shows.

@@ -32,6 +32,7 @@ APPROVAL_LISTEN_S = 10.0
 APPROVAL_SILENCE_S = 1.2
 ACK = "Yes?"
 END_ACK = "Okay."
+OFFLINE_ACK = "Going offline. Say Hey Jarvis when you need me."
 Emit = Callable[[ServerMessage], Awaitable[None]]
 
 

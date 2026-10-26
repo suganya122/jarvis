@@ -138,7 +138,10 @@ class VoiceLoop:
                 break
             await asyncio.sleep(0.25)
         talk = "hold ⌃⌥Space" if sys.platform == "darwin" else "use your voice shortcut"
-        await self._overlay.welcome(f"Hi, I'm Jarvis. Say “Jarvis”, or {talk}, and tell me what to do.")
+        await self._overlay.welcome(
+            f"Hi, I'm Jarvis. Say “Hey Jarvis”, or {talk}, then just talk: "
+            "I stay live until you say “go offline”."
+        )
         await self.loop.say_now("Jarvis is ready.")
 
     def refresh_voice(self) -> None:

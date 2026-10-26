@@ -150,3 +150,40 @@ def test_short_bits_and_code_blocks_wait() -> None:
     assert splitter.push("Run this:\n```\nls -la. \n```\nThat lists every file in the folder. ") == [
         "Run this:\n```\nls -la. \n```\nThat lists every file in the folder."
     ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "go offline",
+        "Go offline.",
+        "okay jarvis go offline",
+        "go to sleep",
+        "stop listening",
+        "that's all",
+        "That's all, thanks.",
+        "no that's all",
+        "okay bye",
+        "I'm done",
+    ],
+)
+def test_go_offline(text: str) -> None:
+    from core.speech_text import is_go_offline
+
+    assert is_go_offline(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["thanks", "thank you very much", "go to the offline store", "what time is it"]
+)
+def test_not_go_offline(text: str) -> None:
+    from core.speech_text import is_go_offline
+
+    assert not is_go_offline(text)
+
+
+def test_fillers_are_not_requests() -> None:
+    from core.speech_text import is_filler
+
+    assert is_filler("um") and is_filler("Okay.") and is_filler("uh the") and is_filler("")
+    assert not is_filler("ok open chrome")

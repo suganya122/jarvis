@@ -1261,3 +1261,22 @@ are recognised (`core.context.retarget`, no model call).
   test keys are allowed.
 - Keys live only in the app data folder's `.env` (gitignored, mode 600).
 
+## D102. Live until "go offline"
+
+- **Starting:** "Hey Jarvis" (or "OK Jarvis", or the name alone, or ⌃⌥Space) starts a live
+  session.
+- **While live:**
+  - Everything you say is a request: no wake word, no timeout.
+  - The box stays up ("Live: just talk"), and the menu bar shows it.
+- **Ending:** only a goodbye ends it: "go offline", "go to sleep", "stop listening",
+  "that's all (thanks)", "bye", or the menu's Go offline. It replies "Going offline. Say Hey
+  Jarvis when you need me." and goes back to waiting.
+  - A polite "thanks" gets "You're welcome." and stays live.
+- **What's ignored:** stray sounds ("um", "okay").
+- **Cost while live:** audio reaches the speech engine only while there is sound, so an idle
+  live session costs next to nothing.
+- **Setting:** `voice.stay_live` (on by default). Off brings back the 8 s follow-up window.
+- **Trade-off:** while live, speech in the room (a TV, other people) is taken as a request.
+  Say "go offline" when you step away. Approvals still guard anything that changes, sends
+  or pays.
+

@@ -267,7 +267,7 @@ class OverlayStatus(BaseModel):
 
 
 class VoiceCommandIn(BaseModel):
-    action: Literal["toggle_chat", "toggle_dictation", "stop", "approve", "deny", "finish"]
+    action: Literal["toggle_chat", "toggle_dictation", "stop", "approve", "deny", "finish", "offline"]
     """approve / deny answer the approval the voice overlay is showing."""
 
 
@@ -373,6 +373,10 @@ async def voice_command(request: Request, body: VoiceCommandIn) -> None:
     if body.action == "finish":  # the talk key was let go: send what was said, no silence wait
         if loop is not None:
             loop.loop.finish_now()
+        return
+    if body.action == "offline":  # end a live session: back to waiting for "Hey Jarvis"
+        if loop is not None:
+            loop.loop.go_offline()
         return
     if body.action in ("toggle_chat", "toggle_dictation") and not rt.overlay.listening:
         rt.context.begin()  # where the user is right now: before anything else can change it
