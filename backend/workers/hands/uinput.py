@@ -25,6 +25,10 @@ EVENT = struct.Struct("llHHi")
 
 
 def available() -> str | None:
+    """Why raw keys and scrolling can't be sent through uinput (Linux), or None. macOS sends them
+    through Jarvis.app instead (workers/hands/mac.py), so there it's never the obstacle."""
+    if sys.platform == "darwin":
+        return None
     if not sys.platform.startswith("linux"):
         return "raw key input is only implemented on Linux so far"
     if not os.access(DEVICE, os.W_OK):

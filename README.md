@@ -66,8 +66,10 @@ microphone) or `wmctrl` is missing. Run the same command again to update. Uninst
 3. Say **"Hey Jarvis, what time is it?"** (on a Mac you can also hold ⌃⌥Space). It stays
    **live**: keep talking, no wake word needed, until you say **"go offline"**.
 
-- **Approvals:** ordinary changes can be answered "yes" or "no". Sending and buying always
-  need a click on the small window it shows.
+- **Approvals:** anything that changes something is asked first; answer "yes" or "no" out
+  loud, or with the buttons on the small window it shows. Before sending, buying or deleting
+  it says so plainly ("This will send something: …") so you know what a yes does.
+- **Interrupting:** say "wait", "stop" or "no" while it talks, or just start talking.
 - **Privacy:** speech is recognised on this computer. What you say is thrown away unless it
   starts with the wake word. **Pause everything** closes the microphone.
 - **A natural voice** (free, about 100 MB):

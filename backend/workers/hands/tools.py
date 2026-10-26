@@ -179,7 +179,7 @@ class PressKeys(WorkerTool[KeysArgs]):
         _, label = env.window(args.window_id)[:2]
         keys = parse_combo(args.keys)
         return ToolAssessment(
-            risk=key_risk(keys), summary=f"Press {display(keys)} in {label}", error=uinput.available()
+            risk=key_risk(keys, label), summary=f"Press {display(keys)} in {label}", error=uinput.available()
         )
 
     async def run(self, args: KeysArgs, env: HandsEnv) -> ToolResult:
@@ -300,9 +300,8 @@ class InsertText(WorkerTool[InsertArgs]):
     capabilities = (Capability.INPUT_CONTROL,)
 
     def assess(self, args: InsertArgs, env: HandsEnv) -> ToolAssessment:
-        return ToolAssessment(
-            risk=self.risk, summary=f"Type {len(args.text)} characters into the focused field"
-        )
+        preview = args.text if len(args.text) <= 80 else args.text[:80] + "…"
+        return ToolAssessment(risk=self.risk, summary=f"Type “{preview}” into the focused field")
 
     async def run(self, args: InsertArgs, env: HandsEnv) -> ToolResult:
         result = await asyncio.to_thread(env.hands.insert_text, args.text)

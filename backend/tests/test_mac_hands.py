@@ -94,3 +94,18 @@ def test_every_key_name_has_a_mac_code() -> None:
 
     missing = [k for k in KEYCODES if k not in MAC_KEYCODES and k not in MODIFIERS]
     assert missing == []
+
+
+@pytest.mark.parametrize(
+    ("keys", "where", "risk"),
+    [
+        (["enter"], "WhatsApp — 'Ravi'", "external_send"),  # Enter in a chat sends the message
+        (["meta", "enter"], "Mail — 'New Message'", "external_send"),
+        (["enter"], "TextEdit — 'Untitled'", "write"),
+        (["meta", "a"], "WhatsApp — 'Ravi'", "write"),
+    ],
+)
+def test_enter_in_a_chat_app_counts_as_sending(keys: list[str], where: str, risk: str) -> None:
+    from workers.hands.risk import key_risk
+
+    assert key_risk(keys, where) == risk

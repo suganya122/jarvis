@@ -28,5 +28,19 @@ def label_risk(*labels: str) -> RiskLevel:
     return RiskLevel.WRITE
 
 
-def key_risk(keys: list[str]) -> RiskLevel:
-    return RiskLevel.DESTRUCTIVE if "+".join(keys) in DESTRUCTIVE_KEYS else RiskLevel.WRITE
+MESSAGING = re.compile(
+    r"whatsapp|messages|telegram|signal|slack|discord|teams|skype|wechat|messenger|mail|outlook|"
+    r"gmail|imessage|\bline\b|zoom|google chat|instagram|linkedin|twitter|\bx\b",
+    re.I,
+)
+"""Apps where Enter sends what was typed to someone."""
+SEND_KEYS = frozenset({"enter", "ctrl+enter", "meta+enter", "shift+meta+d"})
+
+
+def key_risk(keys: list[str], where: str = "") -> RiskLevel:
+    combo = "+".join(keys)
+    if combo in DESTRUCTIVE_KEYS:
+        return RiskLevel.DESTRUCTIVE
+    if combo in SEND_KEYS and MESSAGING.search(where):  # Enter in a chat sends the message
+        return RiskLevel.EXTERNAL_SEND
+    return RiskLevel.WRITE

@@ -247,12 +247,9 @@ class TurnsMixin:
         return None if spoken["any"] else "Done."
 
     async def _ask_approval(self, msg: ApprovalRequested) -> None:
+        """Asked aloud; a spoken yes/no or the overlay card's buttons answer it, whichever is first."""
         self.state = "approval"
-        summary = msg.summary.split("\n", 1)[0][:160]
-        if msg.risk in ("external_send", "purchase") or msg.untrusted_context:
-            await self._say(f"I need your OK on screen. {summary}")
-            return  # the overlay card's buttons answer it
-        await self._say(f"{summary}. Say yes or no.")
+        await self._say(approval_question(msg))
         for attempt in range(2):
             heard = await self._hear(wake=False, first_word_s=APPROVAL_LISTEN_S, silence_s=APPROVAL_SILENCE_S)
             verdict = yes_no(heard or "")
@@ -263,3 +260,25 @@ class TurnsMixin:
                 await self._say("Sorry, yes or no?")
         self._d.resolve_approval(msg.approval_id, False)  # no clear answer: not approved
         await self._say("I'll leave that for now.")
+
+
+SERIOUS = {
+    "external_send": "This will send something",
+    "purchase": "This will spend money",
+    "destructive": "This can't be undone",
+}
+
+
+def approval_question(msg: ApprovalRequested) -> str:
+    """What's about to happen, said in full before a yes counts: the kind of step when it matters,
+    and whether outside content (a page, an email, a file) shaped it."""
+    summary = msg.summary.split("\n", 1)[0][:240].rstrip(".")
+    parts = []
+    if msg.untrusted_context:
+        parts.append("Heads up, this comes after reading outside content.")
+    if kind := SERIOUS.get(str(msg.risk)):
+        parts.append(f"{kind}: {summary}.")
+        parts.append("Should I go ahead? Say yes or no.")
+    else:
+        parts.append(f"{summary}. Say yes or no.")
+    return " ".join(parts)

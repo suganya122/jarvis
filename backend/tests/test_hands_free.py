@@ -312,27 +312,33 @@ def test_a_muddled_or_missing_answer_never_approves(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize(
-    ("risk", "untrusted"), [("external_send", False), ("purchase", False), ("write", True)]
+    ("risk", "untrusted", "said"),
+    [
+        ("external_send", False, "This will send something"),
+        ("purchase", False, "This will spend money"),
+        ("write", True, "outside content"),
+    ],
 )
-def test_sends_purchases_and_tainted_requests_need_a_click(
-    monkeypatch: pytest.MonkeyPatch, risk: str, untrusted: bool
+def test_serious_steps_are_spelled_out_then_a_spoken_yes_approves(
+    monkeypatch: pytest.MonkeyPatch, risk: str, untrusted: bool, said: str
 ) -> None:
+    """The user's choice: a spoken yes or the button approves anything, sends and purchases too.
+    So what kind of step it is, and where it came from, is said before the yes counts."""
+
     async def run() -> None:
         rig = Rig(monkeypatch)
 
         async def script(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
             await emit(_approval(risk, untrusted))
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.5)
 
         rig.turn_script = script
         async with rig.running():
             await rig.speak("jarvis email the plan")
-            await rig.until(lambda: any("on screen" in t for t in rig.ears.said))
+            await rig.until(lambda: any(said in t and "yes or no" in t for t in rig.ears.said))
             rig.rec.text = ""
-            await rig.speak("yes")  # a TV or a stray word can't approve it
-            await asyncio.sleep(0.4)
-            assert rig.resolved == []
-            assert not any("Say yes or no" in t for t in rig.ears.said)
+            await rig.speak("yes")
+            await rig.until(lambda: rig.resolved == [("a1", True)])
 
     asyncio.run(run())
 

@@ -1353,3 +1353,14 @@ to show its own prompt, once.
 Because Jarvis.app is signed on the Mac itself (ad hoc), macOS ties permissions to that exact
 build: the installer now rebuilds it only when its Swift sources change, so updates keep what was
 allowed.
+
+## D106. A spoken yes approves everything (the user's choice), said out loud first
+
+Earlier (D90) sends, purchases and anything shaped by outside content needed a click, so a
+misheard word or a TV couldn't send or pay. The user chose instead that a spoken "yes" or the
+overlay buttons approve every step. What keeps that informed: before a serious step the
+question says what kind it is ("This will send something / spend money / can't be undone"),
+the step itself (typing shows the actual text), and when outside content (a page, an email, a
+file) led to it. Any refusal word in the answer wins ("yeah no" is a no), and silence is a no.
+Because Enter in a chat or mail app sends what was typed, `press_keys` there is now rated a
+send, not an ordinary change.
