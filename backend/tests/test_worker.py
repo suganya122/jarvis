@@ -22,7 +22,7 @@ def root(tmp_path: Path) -> Path:
     (tmp_path / "allowed" / "docs").mkdir(parents=True)
     (tmp_path / "allowed" / "secret").mkdir()
     (tmp_path / "outside").mkdir()
-    (tmp_path / "allowed" / "docs" / "a.txt").write_text("hello\n")
+    (tmp_path / "allowed" / "docs" / "a.txt").write_bytes(b"hello\n")  # exact bytes on every OS (no CRLF)
     (tmp_path / "outside" / "x.txt").write_text("nope")
     return tmp_path
 
