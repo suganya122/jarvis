@@ -81,7 +81,7 @@ jobs:
       - name: Accessibility helper answers, and says how to allow it (permission can't be granted on CI)
         run: |
           printf '%s\n' '{"id":1,"op":"trusted"}' '{"id":2,"op":"windows"}' '{"id":3,"op":"nope"}' \
-            | timeout 20 "$APP/Contents/MacOS/Jarvis" --hands | tee "$OUT/hands-helper.txt"
+            | perl -e 'alarm 20; exec @ARGV' "$APP/Contents/MacOS/Jarvis" --hands | tee "$OUT/hands-helper.txt"
           grep -q '"id":1' "$OUT/hands-helper.txt"
           grep -q '"id":2' "$OUT/hands-helper.txt"
           grep -q '"id":3' "$OUT/hands-helper.txt"
