@@ -43,7 +43,7 @@ from core.store import Store
 from core.tool_exec import ChatPermissions, ToolExecutor
 from core.toolbox import CurrentTime, ToolRegistry
 from core.voice import VoiceHub
-from core.voice_loop import VoiceLoop, apple_speech_helper
+from core.voice_loop import VoiceLoop, apple_speech_helper, mac_app
 from core.watchers import WatcherService
 from core.worker_host import RemoteTool, WorkerHost
 from skills.store import SkillStore
@@ -205,6 +205,7 @@ class Runtime:
             capture_max_edge=tools.capture_max_edge,
             stt_model_dir=self.stt_model_dir(),
             apple_speech_helper=self.apple_speech_helper(),
+            mac_app=mac_app(),
             browser=BrowserConfig(
                 mode=self._settings.browser.mode,
                 profile_dir=str(self._data_dir / "browser"),

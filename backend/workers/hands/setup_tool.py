@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 import subprocess
+import sys
 
 from contracts.common import RiskLevel
 from contracts.tools import ToolAssessment, ToolResult
@@ -36,6 +37,8 @@ class AccessibilityStatus(WorkerTool[NoArgs]):
         return ToolAssessment(risk=self.risk, summary="Check accessibility setup")
 
     async def run(self, args: NoArgs, env: HandsEnv) -> ToolResult:
+        if sys.platform == "darwin":
+            return await asyncio.to_thread(_mac_status, env)
         evidence: dict[str, object] = {"session": os.environ.get("XDG_SESSION_TYPE", "unknown")}
         lines = [f"Desktop session: {evidence['session']}"]
         try:
@@ -74,3 +77,21 @@ class AccessibilityStatus(WorkerTool[NoArgs]):
         evidence["key_input"] = problem is None
         lines.append("Key presses and scrolling: available" if problem is None else f"Key presses: {problem}")
         return ToolResult(ok=bool(evidence["accessibility_bus"]), output="\n".join(lines), evidence=evidence)
+
+
+def _mac_status(env: HandsEnv) -> ToolResult:
+    """macOS: one permission covers windows, controls, keys and clicks: Accessibility for Jarvis."""
+    try:
+        trusted = bool(getattr(env.hands, "trusted", lambda: False)())
+    except Exception as exc:
+        return ToolResult(ok=False, output=f"Window and app control: not available ({exc})", evidence={})
+    if not trusted:
+        output = (
+            "Window and app control: waiting for permission. Turn on Jarvis in System Settings → "
+            "Privacy & Security → Accessibility (if Jarvis isn't listed, click + and choose "
+            "Applications in your home folder → Jarvis). Screenshots also need Screen Recording for Jarvis."
+        )
+        return ToolResult(ok=False, output=output, evidence={"accessibility": False})
+    windows = env.hands.list_windows()
+    output = f"Window and app control: working ({len(windows)} windows visible); keys, clicks, menus too."
+    return ToolResult(ok=True, output=output, evidence={"accessibility": True, "windows": len(windows)})

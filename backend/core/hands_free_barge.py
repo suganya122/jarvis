@@ -7,6 +7,7 @@ request starts from their first word, not from where the cut-in was noticed."""
 
 import asyncio
 import contextlib
+import logging
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -15,6 +16,7 @@ from typing import Any
 from contracts.voice import TranscriptEvent
 from core.speech_text import is_barge_in
 
+log = logging.getLogger(__name__)
 LEAD_IN_FRAMES = 30
 """The last three seconds of sound, handed to the next request when someone cuts in."""
 ROTATE_FRAMES = 600
@@ -40,6 +42,7 @@ class BargeIn:
         self.stream = ""
         self.frames: deque[str] = deque(maxlen=LEAD_IN_FRAMES)
         self.cut_in = False
+        self._heard = {"frames": 0, "transcripts": 0, "words": 0}  # counts for the log, never words
 
     def frame(self, pcm_b64: str) -> None:
         self._queue.put_nowait(("frame", pcm_b64))
@@ -64,14 +67,27 @@ class BargeIn:
                     self.frames.append(data)
                     await self._rec.feed(self.stream, data)
                     fed += 1
-                elif data.error:
-                    return  # the speech engine can't hear: the main loop reports it
+                    self._heard["frames"] += 1
+                    continue
+                self._heard["transcripts"] += 1
+                self._heard["words"] = max(self._heard["words"], len(data.text.split()))
+                if data.error:
+                    log.warning("cut-in listener: the speech engine stopped (%s)", data.error)
+                    return  # the main loop reports it
                 elif is_barge_in(data.text, self._saying(), self._wake_word):
                     self.cut_in = True
                     self._on_cut_in()
                     return
         finally:
             await self._close()
+            h = self._heard
+            log.info(
+                "cut-in listener: %.1f s of sound, %d transcripts (up to %d words)%s",
+                h["frames"] / 10,
+                h["transcripts"],
+                h["words"],
+                ", cut in" if self.cut_in else "",
+            )
 
     async def _close(self) -> None:
         stream, self.stream = self.stream, ""

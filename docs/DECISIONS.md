@@ -1323,3 +1323,33 @@ in words; no code was copied.
   It also confirmed that window arrangement works on macOS (verified), and that Jarvis.app
   runs and reaches the speech permission step.
 
+
+## D104. Talking over Jarvis, and earlier reasoning left out of replayed turns
+
+**Barge-in.** While a request runs (thinking and speaking), a second recogniser stream listens
+(`core/hands_free_barge.py`). There's no echo cancellation on PortAudio input, so its own voice
+reaches the microphone; what's heard is compared with what it's saying (`is_barge_in`): a cut-in
+word ("wait", "stop", "hold on"), the wake word, or three words that aren't its own stop the reply
+at once. The last three seconds of sound go to the next request so it's heard from the first
+word; "wait" alone just makes it listen. Headphones make it exact. The log records counts only.
+
+**Preserved thinking.** Claude accepts a thinking block back only while the system prompt, tools
+and every earlier message are byte-identical to when it was written. Between turns that never
+holds here (the system prompt carries the current screen context, screenshots aren't stored for
+privacy, old turns fall off the 200-message window), so `Store.history` drops earlier turns'
+thinking blocks: a leading run, which the API allows. The current turn's tool loop replays its
+own blocks untouched.
+
+## D105. Windows and controls on macOS through Jarvis.app (`Jarvis --hands`)
+
+The Linux hands use AT-SPI; on a Mac the same Hands protocol is served by a Swift helper inside
+Jarvis.app using the Accessibility API (AXUIElement) and CGEvent for keys, scrolling and clicks
+(`core/macos/Hands.swift`, `HandsActions.swift`; `workers/hands/mac.py` speaks to it). Running
+inside Jarvis.app means the one Accessibility permission is for "Jarvis", like the microphone and
+speech. Keys go only to a window confirmed to be in front; password fields are never read or typed
+into; the blocklist applies by app name. When it isn't allowed yet, the first attempt asks macOS
+to show its own prompt, once.
+
+Because Jarvis.app is signed on the Mac itself (ad hoc), macOS ties permissions to that exact
+build: the installer now rebuilds it only when its Swift sources change, so updates keep what was
+allowed.

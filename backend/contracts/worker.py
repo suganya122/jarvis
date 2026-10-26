@@ -38,6 +38,9 @@ class WorkerConfig(ContractModel):
     apple_speech_helper: str = ""
     """macOS: Jarvis.app's executable, which recognises speech on-device with Apple's Speech
     framework (`--speech`). When set, the voice worker uses it instead of Vosk."""
+    mac_app: str = ""
+    """macOS: Jarvis.app's executable. The hands worker runs it as `--hands` for other apps'
+    windows and controls (Accessibility), whichever speech engine is chosen."""
     capture_max_edge: int = 1280
     """Longest side of screenshots sent to the model (cost and privacy)."""
     blocked_apps: tuple[str, ...] = ()

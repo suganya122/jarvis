@@ -31,14 +31,19 @@ WELCOMED = ".welcomed"
 """In the data folder once the first-start hello has been shown."""
 
 
-def apple_speech_helper(engine: str) -> str:
-    """macOS: Jarvis.app's executable, for Apple's on-device speech recognition ('' if not used)."""
-    if sys.platform != "darwin" or engine == "vosk":
+def mac_app() -> str:
+    """macOS: Jarvis.app's executable ('' elsewhere, or when it isn't installed)."""
+    if sys.platform != "darwin":
         return ""
     found = os.environ.get("JARVIS_SPEECH_HELPER") or str(
         Path.home() / "Applications" / "Jarvis.app" / "Contents" / "MacOS" / "Jarvis"
     )
     return found if Path(found).is_file() else ""
+
+
+def apple_speech_helper(engine: str) -> str:
+    """macOS: Jarvis.app's executable, for Apple's on-device speech recognition ('' if not used)."""
+    return "" if engine == "vosk" else mac_app()
 
 
 class _Recognizer:

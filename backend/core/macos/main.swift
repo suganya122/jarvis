@@ -3,6 +3,7 @@
 // so macOS asks for the microphone, speech recognition and Accessibility once, for "Jarvis".
 //   Jarvis            the menu bar app (starts the assistant)
 //   Jarvis --speech   on-device speech recognition for the assistant's voice worker
+//   Jarvis --hands    other apps' windows and controls (Accessibility) for its hands worker
 //   Jarvis --version  print the version and exit (used by tests)
 import AppKit
 
@@ -13,6 +14,9 @@ if arguments.contains("--version") {
 }
 if arguments.contains("--speech") {
     SpeechServer().run()
+}
+if arguments.contains("--hands") {
+    HandsServer().run()
 }
 let app = NSApplication.shared
 let delegate = AppDelegate()

@@ -125,8 +125,15 @@ class HandsEnv:
     @property
     def hands(self) -> Hands:
         if self._hands is None:
+            if sys.platform == "darwin":
+                if not self.config.mac_app:
+                    raise HandsUnavailable("Jarvis.app isn't installed: run the installer again")
+                from workers.hands.mac import MacHands
+
+                self._hands = MacHands(self.config.mac_app, self.config.blocked_apps)
+                return self._hands
             if not sys.platform.startswith("linux"):
-                raise HandsUnavailable("window and control access is only implemented on Linux so far")
+                raise HandsUnavailable("window and control access isn't available on this system yet")
             from workers.hands.linux import LinuxHands
 
             self._hands = LinuxHands(self.config.blocked_apps)

@@ -206,8 +206,16 @@ LAUNCH="$BIN_DIR/jarvis"
 if [ "$OS" = mac ]; then
   APP="$HOME/Applications/$NAME.app"
   SRC="$("$PY" -c 'import core, pathlib; print(pathlib.Path(core.__file__).parent / "macos")')"
+  # macOS ties the microphone, speech and Accessibility permissions to this exact build, so it's
+  # only rebuilt when its sources change: an ordinary update keeps what you've allowed.
+  STAMP_FILE="$APP/Contents/Resources/build-stamp"
+  STAMP="$(cat "$SRC"/*.swift | sha256 -)-$NAME-$PY"
+  if [ -x "$APP/Contents/MacOS/$NAME" ] && [ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$STAMP" ]; then
+    say "$NAME.app is up to date (your permissions stay as they are)."
+  else
   say "Building ${APP}…"
-  rm -rf "$APP" && mkdir -p "$APP/Contents/MacOS"
+  pkill -x "$NAME" 2>/dev/null || true  # the old build, if it's running
+  rm -rf "$APP" && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -229,6 +237,9 @@ PLIST
   swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
   codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
+  printf '%s' "$STAMP" > "$STAMP_FILE"
+  warn "$NAME.app was rebuilt: macOS may ask again for the microphone, speech recognition and Accessibility."
+  fi
   LAUNCH="$APP/Contents/MacOS/$NAME"
 fi
 
@@ -236,6 +247,7 @@ fi
 "$PY" -m core.cli setup-windows || warn "Window placement isn't set up yet; run: jarvis-cli setup-windows"
 "$PY" -m core.cli autostart on --exec "$LAUNCH" >/dev/null || warn "Couldn't set start at login."
 if [ "${JARVIS_SKIP_START:-0}" != "1" ]; then
+  if [ "$OS" = mac ]; then pkill -x "$NAME" 2>/dev/null && sleep 1; fi  # restart on the new version
   pkill -f "$PREFIX/venv/bin/python -m core" 2>/dev/null || true
   if [ "$OS" = mac ]; then open "$APP"; else nohup "$LAUNCH" > "$PREFIX/jarvis.log" 2>&1 & fi
   say "$NAME is running."
