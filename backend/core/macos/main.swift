@@ -4,6 +4,7 @@
 //   Jarvis            the menu bar app (starts the assistant)
 //   Jarvis --speech   on-device speech recognition for the assistant's voice worker
 //   Jarvis --hands    other apps' windows and controls (Accessibility) for its hands worker
+//   Jarvis --audio    microphone and voice in one engine with echo cancellation, for its ears
 //   Jarvis --version  print the version and exit (used by tests)
 import AppKit
 
@@ -17,6 +18,9 @@ if arguments.contains("--speech") {
 }
 if arguments.contains("--hands") {
     HandsServer().run()
+}
+if arguments.contains("--audio") {
+    AudioServer().run()
 }
 let app = NSApplication.shared
 let delegate = AppDelegate()

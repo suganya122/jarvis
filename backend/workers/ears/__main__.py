@@ -11,6 +11,7 @@ import queue
 import sys
 import threading
 from collections.abc import Callable
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -52,7 +53,7 @@ def main() -> None:
         send(EarsFrame(pcm_b64=base64.b64encode(pcm).decode("ascii"), level=level_of(pcm)))
 
     wav = os.environ.get("ASSISTANT_EARS_WAV")
-    mic: Mic | WavMic = (
+    mic: Mic | WavMic | Any = (
         WavMic(on_pcm, wav.split(os.pathsep))
         if wav
         else Mic(
@@ -67,8 +68,14 @@ def main() -> None:
         if isinstance(mic, WavMic):
             mic.advance()
 
-    speaker = Speaker(said)
+    speaker: Speaker | Any = Speaker(said)
     available, detail = (True, "test microphone") if wav else _probe()
+    if (helper := os.environ.get("ASSISTANT_MAC_AUDIO")) and not wav:
+        audio = _mac_audio(helper, on_pcm, said)
+        if audio is not None:  # one engine for both, with echo cancellation
+            mic, speaker = audio.mic, audio.speaker
+            available, detail = True, f"{audio.microphone} ({audio.detail})"
+            send(EarsMicChosen(microphone=audio.microphone, reason=audio.detail))
     mics = [] if wav else devices.list_microphones()[0]
     send(EarsReady(contract_version=CONTRACT_VERSION, available=available, detail=detail, microphones=mics))
 
@@ -87,7 +94,7 @@ def main() -> None:
     writer.join(timeout=2)
 
 
-def handle(msg: ToEars, mic: Mic | WavMic, speaker: Speaker, send: Callable[[FromEars], None]) -> None:
+def handle(msg: ToEars, mic: Any, speaker: Any, send: Callable[[FromEars], None]) -> None:
     if isinstance(msg, EarsListen):
         if not msg.on:
             mic.stop()
@@ -97,6 +104,18 @@ def handle(msg: ToEars, mic: Mic | WavMic, speaker: Speaker, send: Callable[[Fro
         speaker.say(msg)
     elif isinstance(msg, EarsStopSaying):
         speaker.stop()
+
+
+def _mac_audio(helper: str, on_pcm: Callable[[bytes], None], said: Callable[[EarsSaid], None]) -> Any:
+    """Jarvis.app's audio engine, or None (then the plain microphone and `say` are used)."""
+    from .mac_audio import MacAudio
+
+    try:
+        audio = MacAudio(helper, on_pcm, said, lambda d: print(f"ears: {d}", file=sys.stderr))
+    except OSError as exc:
+        print(f"ears: Jarvis.app's audio couldn't start ({exc}); using the plain microphone", file=sys.stderr)
+        return None
+    return audio if audio.alive else None
 
 
 def _probe() -> tuple[bool, str]:

@@ -92,7 +92,10 @@ class VoiceLoop:
         self._for_voice = for_voice
         self._welcome: asyncio.Task[None] | None = None
         self._begin_context = begin_context
-        self.ears = EarsHost(self._frame, extra_env, preferred_mic=lambda: settings().voice.microphone)
+        ears_env = dict(extra_env or {})
+        if settings().voice.echo_cancel and (app := mac_app()):
+            ears_env["ASSISTANT_MAC_AUDIO"] = app  # one engine for mic and voice: no echo
+        self.ears = EarsHost(self._frame, ears_env, preferred_mic=lambda: settings().voice.microphone)
         self._mic_setting = settings().voice.microphone
         self._settings = settings
 

@@ -86,6 +86,13 @@ jobs:
           grep -q '"id":2' "$OUT/hands-helper.txt"
           grep -q '"id":3' "$OUT/hands-helper.txt"
 
+      - name: Audio engine (mic + voice, echo cancellation) starts and speaks (CI Macs may have no mic)
+        continue-on-error: true
+        run: |
+          (echo '{"type":"listen","on":true}'; sleep 3; echo '{"type":"say","id":"t1","text":"Testing."}'; sleep 6) \
+            | perl -e 'alarm 25; exec @ARGV' "$APP/Contents/MacOS/Jarvis" --audio | grep -v '"frame"' | tee "$OUT/audio-helper.txt"
+          grep -q '"type":"ready"' "$OUT/audio-helper.txt"
+
       - name: Cache the small speech model
         uses: actions/cache@v4
         with:

@@ -193,6 +193,9 @@ class VoiceSettings(BaseModel):
     """auto: Apple's on-device recognition on a Mac with Jarvis.app, else the downloaded model."""
     microphone: str = Field(default="", max_length=300)
     """Which input to listen to ("" = automatic: skips inputs that are only static or silence)."""
+    echo_cancel: bool = True
+    """macOS: listen and speak through Jarvis.app with Apple's echo cancellation, so it doesn't
+    hear itself and can be talked over. Off: the plain microphone and the `say` command."""
     stay_live: bool = True
     """After "Hey Jarvis", stay live: everything you say is a request (no wake word) until you
     say "go offline". Off: it listens for follow_up_s after each answer, then waits again."""

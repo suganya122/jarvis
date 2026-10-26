@@ -1381,3 +1381,16 @@ heard is checked against what it said (numbers as words or digits) and its own w
 a lone "yes"/"no" always counts. Not while waiting for the wake word, which it says itself.
 Tests run with strict approvals by default (they exercise the approval flow); the shipped
 defaults have their own tests (`real_defaults`).
+
+## D108. macOS: mic and voice in one engine with Apple's echo cancellation
+
+It kept hearing itself: the mic (PortAudio) and the voice (`say`) were separate, and nothing took
+its own voice out of what the mic heard; aligning transcripts (D104) is a second layer, not a fix.
+Apple's voice processing (AVAudioEngine `setVoiceProcessingEnabled`) cancels what the same engine
+plays; whether it cancels another process like `say` is undocumented and reports conflict. So
+Jarvis.app now runs `--audio` (core/macos/Audio.swift): one engine that captures the mic (16 kHz,
+channel 0) and plays speech (AVSpeechSynthesizer.write → AVAudioPlayerNode), voice processing on,
+other apps' audio ducked as little as macOS allows (14+). If voice processing fails (mic and
+speaker on different devices) or starves the mic, it carries on without it and says so in the
+log. The ears worker uses it when `voice.echo_cancel` is on and Jarvis.app is installed; it falls
+back to the plain mic and `say` otherwise. Next: the Kokoro voice played through the same engine.
