@@ -27,6 +27,24 @@ def _stored_block(block: ToolResultBlock) -> dict[str, Any]:
     return data
 
 
+REASONING_BLOCKS = ("thinking", "redacted_thinking")
+
+
+def _from_earlier_turn(state: dict[str, Any] | None) -> dict[str, Any] | None:
+    """An earlier turn's reply, replayed without its reasoning blocks.
+
+    Claude accepts a thinking block back only while everything before it (system prompt, tools,
+    earlier messages) is byte-identical to when it was written. Between turns that never holds
+    here: the system prompt carries what's on screen right now, screenshots aren't stored, and old
+    turns fall off the front of the window. Dropping every earlier turn's reasoning (a leading
+    run of blocks, which the API allows) keeps the current turn's blocks valid; within a turn the
+    tool loop replays its own reasoning untouched."""
+    if not state or not isinstance(state.get("content"), list):
+        return state
+    content = [b for b in state["content"] if not (isinstance(b, dict) and b.get("type") in REASONING_BLOCKS)]
+    return {**state, "content": content}
+
+
 class SessionInfo(BaseModel):
     id: str
     title: str
@@ -125,7 +143,9 @@ class Store:
             ChatMessage(
                 role=Role(row["role"]),
                 text=row["text"],
-                provider_state=json.loads(row["provider_state"]) if row["provider_state"] else None,
+                provider_state=_from_earlier_turn(
+                    json.loads(row["provider_state"]) if row["provider_state"] else None
+                ),
                 tool_results=tuple(ToolResultBlock(**b) for b in json.loads(row["tool_results"] or "[]")),
             )
             for row in rows

@@ -3,7 +3,7 @@ approvals (a muddled answer must never approve), and what's worth saying aloud."
 
 import pytest
 
-from core.speech_text import could_be_wake, is_end_phrase, match_wake, speakable, yes_no
+from core.speech_text import could_be_wake, is_barge_in, is_end_phrase, is_hold, match_wake, speakable, yes_no
 
 
 @pytest.mark.parametrize(
@@ -187,3 +187,23 @@ def test_fillers_are_not_requests() -> None:
 
     assert is_filler("um") and is_filler("Okay.") and is_filler("uh the") and is_filler("")
     assert not is_filler("ok open chrome")
+
+
+@pytest.mark.parametrize(
+    ("heard", "saying", "cut_in"),
+    [
+        ("ok wait", "You are on the left screen.", True),
+        ("no the other screen please", "You are on the left screen.", True),
+        ("jarvis", "Sure, it is noon.", True),
+        ("you are on the left", "You are on the left screen.", False),  # its own voice
+        ("you are on the lot screen", "You are on the left screen.", False),  # misheard echo
+        ("um", "", False),
+    ],
+)
+def test_cut_in_is_told_apart_from_its_own_voice(heard: str, saying: str, cut_in: bool) -> None:
+    assert is_barge_in(heard, saying, "jarvis") is cut_in
+
+
+def test_hold_phrases_are_not_requests() -> None:
+    assert is_hold("wait") and is_hold("ok hold on a second") and is_hold("stop")
+    assert not is_hold("wait what time is it") and not is_hold("")

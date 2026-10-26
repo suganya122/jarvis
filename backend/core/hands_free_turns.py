@@ -14,6 +14,7 @@ from contracts.ws import (
     ChatError,
     ServerMessage,
 )
+from core.hands_free_barge import BargeIn
 from core.hands_free_types import (
     APPROVAL_LISTEN_S,
     APPROVAL_SILENCE_S,
@@ -47,8 +48,14 @@ class TurnsMixin:
     _offline: bool
     _woken: bool
     _speaking: bool
+    _barge: BargeIn | None
+    _saying: str
+    _lead_in: list[str]
 
     async def _say(self, text: str) -> None:
+        raise NotImplementedError
+
+    def _wake_word(self) -> str:
         raise NotImplementedError
 
     async def _hear(self, *, wake: bool, first_word_s: float | None, silence_s: float) -> str | None:
@@ -129,6 +136,32 @@ class TurnsMixin:
             return None
         return self._session
 
+    async def _turn_listening(self, text: str) -> str | None:
+        """One request, with an ear open the whole time: talking over it stops it, and what was
+        said becomes the start of the next request."""
+        barge = BargeIn(
+            self._d.recognizer,
+            saying=lambda: self._saying,
+            wake_word=self._wake_word(),
+            paused=lambda: self.state == "approval",
+            on_cut_in=self.interrupt,
+        )
+        self._barge, self._saying = barge, ""
+        watch = asyncio.create_task(barge.run())
+        try:
+            reply = await self._turn(text, await self._take_speculation())
+        finally:
+            self._barge = None
+            watch.cancel()
+            await asyncio.gather(watch, return_exceptions=True)
+        if barge.cut_in:
+            self._lead_in = list(barge.frames)
+            return None
+        return reply
+
+    def _cut_in(self) -> bool:
+        return self._barge is not None and self._barge.cut_in
+
     # ---- one request --------------------------------------------------------------------
 
     async def _turn(self, text: str, speculation: object | None = None) -> str | None:
@@ -144,6 +177,8 @@ class TurnsMixin:
 
         async def speak_as_it_streams() -> None:
             while (sentence := await to_say.get()) is not None:
+                if self._cut_in():
+                    continue  # talked over: say nothing more of this reply
                 if spoken["chars"] >= MAX_SPOKEN_CHARS:
                     continue  # long replies: the rest is on screen
                 spoken["chars"] += len(sentence)

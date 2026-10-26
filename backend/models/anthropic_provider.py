@@ -25,6 +25,7 @@ from models.pricing import estimate_cost
 
 PROVIDER = "anthropic"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+KEY_REJECTED = "Your Anthropic API key was rejected. Check the key in your .env file, then restart me."
 ClientFactory = Callable[[str], anthropic.AsyncAnthropic]
 
 
@@ -77,7 +78,7 @@ class AnthropicProvider:
                         yield TextDelta(text=event.delta.text)
                 final = await stream.get_final_message()
         except anthropic.AuthenticationError:
-            yield ModelError(code="auth", message="The Anthropic API key was rejected.")
+            yield ModelError(code="auth", message=KEY_REJECTED)
             return
         except anthropic.RateLimitError:
             yield ModelError(code="rate_limited", message="Anthropic rate limit hit.", retryable=True)

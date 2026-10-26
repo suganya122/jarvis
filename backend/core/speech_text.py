@@ -27,7 +27,7 @@ APPROVE = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "approv
 APPROVE_PHRASES = ("go ahead", "do it", "go for it")
 DENY = {"no", "nope", "nah", "deny", "denied", "cancel", "stop", "dont", "never", "negative", "abort",
         "wait", "not"}  # fmt: skip
-MAX_SPOKEN_CHARS = 500
+MAX_SPOKEN_CHARS = 300
 
 
 def words(text: str) -> list[str]:
@@ -197,3 +197,25 @@ def is_filler(text: str) -> bool:
     """Not a request: a stray "um", "okay", or a word the recogniser made of a noise."""
     spoken = words(text)
     return not spoken or all(w in FILLERS for w in spoken)
+
+
+CUT_IN_WORDS = {"wait", "stop", "hold", "pause", "enough", "quiet", "cancel", "shut", "hang"}
+"""Said over the reply, any one of these cuts it off, like it would a person."""
+HOLD_WORDS = CUT_IN_WORDS | {"on", "a", "second", "sec", "minute", "moment", "just", "please", "up", "no"}
+
+
+def is_barge_in(heard: str, saying: str, wake_word: str) -> bool:
+    """Is someone talking over the reply? Words that are only its own voice coming back through the
+    microphone (they're in what it's saying) don't count: a cut-in word, the name, or three
+    other words of their own do."""
+    own = set(words(saying))
+    theirs = [w for w in words(heard) if w not in own]
+    if any(w in CUT_IN_WORDS or w == wake_word for w in theirs):
+        return True
+    return len([w for w in theirs if w not in FILLERS]) >= 3
+
+
+def is_hold(text: str) -> bool:
+    """Only "wait", "hold on a second", "stop": go quiet and listen, there's no request yet."""
+    spoken = words(text)
+    return bool(spoken) and all(w in HOLD_WORDS or w in FILLERS for w in spoken)

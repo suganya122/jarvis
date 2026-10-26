@@ -43,7 +43,15 @@ from core.hands_free_types import (
     HandsFreeState,
     NoiseFloor,
 )
-from core.speech_text import could_be_wake, is_end_phrase, is_filler, is_go_offline, match_wake, speakable
+from core.speech_text import (
+    could_be_wake,
+    is_end_phrase,
+    is_filler,
+    is_go_offline,
+    is_hold,
+    match_wake,
+    speakable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +80,9 @@ class HandsFree(TurnsMixin):
         self._spec_text = ""
         self._tasks: set[asyncio.Future[None]] = set()
         self._engine_problem: tuple[str, float] | None = None
+        self._barge = None
+        self._saying = ""  # what this request's reply has said so far (its echo isn't a cut-in)
+        self._lead_in: list[str] = []  # the sound of someone cutting in, for the next request
         self._told = ""
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -91,10 +102,14 @@ class HandsFree(TurnsMixin):
             self._mic_on = False
 
     def on_frame(self, pcm_b64: str, level: float) -> None:
+        if self._barge is not None:
+            self._barge.frame(pcm_b64)
         if self._consuming and not self._speaking and self._d.clock() >= self._deaf_until:
             self._inbox.put_nowait(("frame", (pcm_b64, level)))
 
     def on_transcript(self, event: TranscriptEvent) -> None:
+        if self._barge is not None:
+            self._barge.transcript(event)
         if event.stream_id == self._stream:
             self._inbox.put_nowait(("stt", event))
 
@@ -202,8 +217,8 @@ class HandsFree(TurnsMixin):
             elif not live and is_end_phrase(pending):
                 await self._say(END_ACK)
                 return
-            elif not (live and is_filler(pending)):
-                reply = await self._turn(pending, await self._take_speculation())
+            elif not (live and is_filler(pending)) and not is_hold(pending):  # "wait": just listen
+                reply = await self._turn_listening(pending)
                 if reply:
                     await self._say(reply)
             if self._blocker() is not None or self._offline:
@@ -235,6 +250,9 @@ class HandsFree(TurnsMixin):
             self._inbox.get_nowait()
         self._stream = stream
         await self._d.recognizer.open(stream)
+        lead_in, self._lead_in = self._lead_in, []
+        for old in lead_in:  # someone cut in: start from their first word
+            await self._d.recognizer.feed(stream, old)
         self._consuming = True
         now = self._d.clock()
         started = last_sound = last_change = now
@@ -370,6 +388,7 @@ class HandsFree(TurnsMixin):
 
     async def _say_now(self, spoken: str) -> None:
         before, self.state, self._speaking = self.state, "speaking", True
+        self._saying = f"{self._saying} {spoken}"
         try:
             await self._d.ears.say(spoken)
         except TimeoutError:

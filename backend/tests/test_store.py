@@ -51,6 +51,24 @@ async def test_history_keeps_provider_state(tmp_path: Path) -> None:
     await store.close()
 
 
+async def test_earlier_turns_come_back_without_their_reasoning(tmp_path: Path) -> None:
+    """Claude rejects a thinking block whose earlier conversation changed (screenshots aren't
+    stored, the screen context differs each turn), so replayed history leaves them out."""
+    store = await make_store(tmp_path)
+    sid = await store.ensure_session(None, "which screen am I on")
+    reply = [
+        {"type": "thinking", "thinking": "", "signature": "sig"},
+        {"type": "redacted_thinking", "data": "x"},
+        {"type": "tool_use", "id": "c1", "name": "capture_screen", "input": {}},
+    ]
+    state = {"provider": "anthropic", "content": reply}
+    await store.append_message(sid, "t1", ChatMessage(role=Role.USER, text="which screen am I on"))
+    await store.append_message(sid, "t1", ChatMessage(role=Role.ASSISTANT, text="", provider_state=state))
+    history = await store.history(sid)
+    assert history[1].provider_state == {"provider": "anthropic", "content": [reply[2]]}
+    await store.close()
+
+
 async def test_cost_summary_buckets_by_day_and_month(tmp_path: Path) -> None:
     store = await make_store(tmp_path)
     done = Completed(

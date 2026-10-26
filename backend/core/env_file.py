@@ -48,5 +48,20 @@ def load(path: Path | None) -> dict[str, str]:
                 log.warning("%s was readable by other users; it is now private to you", path.name)
             except OSError:
                 log.warning("%s is readable by other users and couldn't be fixed: chmod 600 it", path.name)
-    values = dotenv_values(path)
-    return {k: v.strip() for k, v in values.items() if v and v.strip()}
+    values = {k: v.strip() for k, v in dotenv_values(path).items() if v and v.strip()}
+    if problem := key_problem(values.get("ANTHROPIC_API_KEY", "")):
+        log.warning("%s: ANTHROPIC_API_KEY %s", path.name, problem)  # never the key itself
+    return values
+
+
+def key_problem(key: str) -> str:
+    """What looks wrong with a pasted key, or "" (it may still be revoked: only Anthropic knows)."""
+    if not key:
+        return ""
+    if any(c.isspace() for c in key) or key.count("sk-ant-") > 1:
+        return "looks like two keys or extra text pasted together: keep only one key on the line"
+    if not key.startswith("sk-ant-"):
+        return "doesn't start with sk-ant-: copy the whole key from console.anthropic.com"
+    if len(key) > 150:
+        return f"is {len(key)} characters long (a key is about 108): something extra was pasted"
+    return ""

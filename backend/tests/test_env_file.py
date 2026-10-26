@@ -78,3 +78,13 @@ def test_api_errors_say_what_to_fix() -> None:
     bad = {"error": {"message": "model: claude-x\nnot found"}}
     assert _error_text(_status_error(400, bad)) == "Anthropic API error 400: model: claude-x not found"
     assert _error_text(_status_error(400, None)) == "Anthropic API error 400."
+
+
+def test_a_mangled_key_is_called_out() -> None:
+    from core.env_file import key_problem
+
+    good = "sk-ant-api03-" + "x" * 95
+    assert key_problem(good) == ""
+    assert "two keys" in key_problem(good + good)
+    assert "sk-ant-" in key_problem("api03-" + "x" * 100)
+    assert key_problem("") == ""

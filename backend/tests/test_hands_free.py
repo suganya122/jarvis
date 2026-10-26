@@ -69,6 +69,8 @@ class FakeRecognizer:
 
     async def close(self, stream_id: str, abort: bool = False) -> None:
         self.closed.append((stream_id, abort))
+        if stream_id.startswith("bi-"):
+            return  # the cut-in listener letting go: the person may still be talking
         if not abort and self.hf is not None:
             self.hf.on_transcript(TranscriptEvent(stream_id=stream_id, kind="final", text=self.text))
         self.text = ""  # a real recogniser starts fresh for the next stream
@@ -363,10 +365,9 @@ def test_the_microphone_is_ignored_while_it_speaks(monkeypatch: pytest.MonkeyPat
         async with rig.running():
             await rig.speak("jarvis hello")
             await rig.until(lambda: rig.hf._speaking)
-            fed = rig.rec.fed
-            rig.rec.text = "jarvis do something else"
+            rig.rec.text = "jarvis stop"  # what it's saying, coming back through the microphone
             await asyncio.sleep(0.4)
-            assert rig.rec.fed == fed and len(rig.turns) == 1
+            assert rig.ears.stopped == 0 and len(rig.turns) == 1
 
     asyncio.run(run())
 
@@ -546,5 +547,66 @@ def test_a_speech_engine_problem_is_said_once_and_shown(monkeypatch: pytest.Monk
             await rig.speak("jarvis what time is it")
             await rig.until(lambda: rig.ears.said[-1:] == ["It is noon."])
             assert rig.ears.said.count("Dictation is off, so I can't hear you.") == 1
+
+    asyncio.run(run())
+
+
+def test_talking_over_the_reply_stops_it_and_starts_the_next_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Like talking over a person: "no wait, the other screen" cuts the reply off at once, and
+    those words are the next request (heard from the first word)."""
+
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+
+        async def long_reply(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
+            await emit(ChatDelta(request_id="r", text="You are on the left screen. "))
+            await asyncio.sleep(1.0)  # still going when they cut in
+            await emit(ChatDelta(request_id="r", text="It has three windows open. "))
+
+        rig.turn_script = long_reply
+        async with rig.running():
+            await rig.speak("jarvis which screen am i on")
+            await rig.until(lambda: rig.ears.said == ["You are on the left screen."])
+            await rig.speak("no wait the other screen")
+            await rig.until(lambda: rig.ears.stopped >= 1)
+            await rig.until(lambda: len(rig.turns) == 2)
+            assert rig.turns[1][0] == "no wait the other screen"
+            assert "It has three windows open." not in rig.ears.said
+
+    asyncio.run(run())
+
+
+def test_its_own_voice_coming_back_is_not_a_cut_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+        rig.reply = "You are on the left screen with three windows open."
+        said = rig.ears.say
+
+        async def echoing(text: str, timeout_s: float = 0) -> bool:
+            rig.rec.text = text.lower().rstrip(".")  # the speakers reach the microphone
+            done = await said(text, timeout_s)
+            rig.rec.text = ""  # and stop when it does
+            return done
+
+        rig.ears.say = echoing  # type: ignore[method-assign]
+        async with rig.running():
+            await rig.speak("jarvis which screen am i on")
+            await rig.until(lambda: rig.ears.said == [rig.reply])
+            await asyncio.sleep(0.3)
+            assert rig.ears.stopped == 0 and len(rig.turns) == 1
+
+    asyncio.run(run())
+
+
+def test_wait_just_makes_it_listen(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+        async with rig.running():
+            await rig.speak("jarvis wait")
+            await rig.until(lambda: rig.hf.state == "listening")
+            await asyncio.sleep(0.4)
+            assert rig.turns == [] and rig.ears.said == []
+            await rig.speak("what time is it")
+            await rig.until(lambda: rig.ears.said == ["It is noon."])
 
     asyncio.run(run())
