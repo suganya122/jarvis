@@ -26,8 +26,8 @@ PERMISSION = "Allow Speech Recognition for Jarvis: System Settings → Privacy &
 class AppleSpeechToText:
     def __init__(self, helper: str) -> None:
         self._proc = subprocess.Popen(  # noqa: S603 - our own app's executable
-            [helper, "--speech"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-        )
+            [helper, "--speech"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )  # its notes (stderr) go to the worker's, and from there to the log
         self._events: dict[str, queue.Queue[TranscriptEvent]] = {}
         self._lock = threading.Lock()
         self.ready: bool | None = None
