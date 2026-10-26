@@ -161,6 +161,17 @@ elif [ "$YES" != "1" ] && has_tty; then
   unset KEY
 fi
 
+# Always leave a .env ready to paste a key into (private to you), even if it was skipped above.
+ENV_FILE="$("$PY" - <<'EOF'
+from core import env_file, paths
+path = paths.data_dir() / ".env"
+if not path.exists():
+    env_file.create_template(path)
+print(path)
+EOF
+)"
+say "Your API key file: $ENV_FILE"
+
 if [ "$OS" = mac ]; then
   say "Speech: Apple's on-device recognition and your Mac's own voices (nothing to download)."
 elif [ "${JARVIS_SKIP_VOICE:-0}" != "1" ]; then

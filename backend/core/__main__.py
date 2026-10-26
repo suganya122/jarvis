@@ -44,11 +44,13 @@ def main() -> None:
     data_dir = paths.data_dir()
     env_path = env_file.find_env_file(data_dir)
     from_file = env_file.load(env_path)
-    if env_path is None:
-        env_path = env_file.CHECKOUT_ROOT / ".env"
-        if env_path.parent.is_dir() and (env_path.parent / "backend").is_dir():
-            env_file.create_template(env_path)
-            print(f"Created {env_path}: paste your ANTHROPIC_API_KEY into it and restart.", flush=True)
+    if (
+        env_path is None
+    ):  # no .env yet: make one to paste the key into (a source checkout's, else the data folder's)
+        checkout = env_file.CHECKOUT_ROOT
+        env_path = checkout / ".env" if (checkout / "backend").is_dir() else data_dir / ".env"
+        env_file.create_template(env_path)
+        print(f"Created {env_path}: paste your ANTHROPIC_API_KEY into it and restart.", flush=True)
     options = DaemonOptions(
         env={**os.environ, **from_file},
         data_dir=data_dir,
