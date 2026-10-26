@@ -238,7 +238,12 @@ if [ "${JARVIS_SKIP_START:-0}" != "1" ]; then
 fi
 
 echo
-say "Done. Say \"Jarvis, what time is it?\""
+say "Done. Say \"Hey Jarvis, what time is it?\""
+if ! grep -q '^ANTHROPIC_API_KEY=sk-ant-' "$ENV_FILE" 2>/dev/null; then
+  echo "   Add your Anthropic API key: paste it after ANTHROPIC_API_KEY= in"
+  echo "     $ENV_FILE"
+  echo "   then restart Jarvis. (Simple questions and commands work without it.)"
+fi
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "   (Add $BIN_DIR to your PATH to use the jarvis commands.)" ;; esac
 if [ "$OS" = mac ]; then
   echo "   Jarvis is in the menu bar (the small ring). Hold ⌃⌥Space and talk, or say \"Jarvis\"."
