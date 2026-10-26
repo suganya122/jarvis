@@ -8,16 +8,20 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 PREFIX=${PREFIX:-"$HOME/.local/opt/$APP"}
 BIN_DIR=${BIN_DIR:-"$HOME/.local/bin"}
 
+# The bundled libraries are built for one Python version (python-version.txt): use exactly that.
+WANT=$(cat "$HERE/python-version.txt" 2>/dev/null || echo 3.12)
 PY=${PYTHON:-}
 if [ -z "$PY" ]; then
-  for candidate in python3.13 python3.12 python3; do
-    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+  for candidate in "python$WANT" python3; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+      [ "$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "$WANT" ]; then
       PY=$candidate; break
     fi
   done
 fi
 if [ -z "$PY" ]; then
-  echo "Python 3.12 or newer is needed. Install it (python.org, Homebrew, or your package manager) and run this again." >&2
+  echo "This bundle needs Python $WANT. Install it (python.org, Homebrew, or your package manager) and run this again," >&2
+  echo "or use the one-line installer, which brings its own Python." >&2
   exit 1
 fi
 
