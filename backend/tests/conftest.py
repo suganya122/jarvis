@@ -14,6 +14,20 @@ from core.config import Settings
 from core.secret_store import MemoryBackend
 from models.fake import FakeProvider
 
+
+@pytest.fixture(autouse=True)
+def strict_approvals(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests exercise the approval flow (asking, "allow for this chat", denials), so by default
+    they run with every step asking except reading files. The shipped defaults (ask only before
+    sending or paying) have their own tests, marked `real_defaults`."""
+    if request.node.get_closest_marker("real_defaults"):
+        return
+    from contracts.common import Capability
+    from core import config
+
+    monkeypatch.setattr(config, "ASK_FIRST", tuple(c for c in Capability if c is not Capability.FS_READ))
+
+
 PORT = 8765
 BASE = f"http://127.0.0.1:{PORT}"
 ORIGIN = BASE

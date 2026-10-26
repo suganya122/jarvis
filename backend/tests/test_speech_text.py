@@ -249,3 +249,12 @@ def test_the_request_after_a_cut_in_loses_only_its_own_last_words() -> None:
     )
     assert without_echo("no wait the other screen", FLIGHTS) == "no wait the other screen"
     assert without_echo("anything", "") == "anything"
+
+
+def test_its_own_question_coming_back_is_not_the_answer() -> None:
+    """It asked about a 4-minute video and took "four minutes" for the reply; a plain "yes" to a
+    question that ends "say yes or no" must still count."""
+    question = "Click The Weeknd, Blinding Lights, 4 minutes, 23 seconds on youtube. Say yes or no."
+    assert without_echo("four minutes", question) == ""
+    assert without_echo("yes", question) == "yes"
+    assert without_echo("say yes or no yes", question) == "yes"

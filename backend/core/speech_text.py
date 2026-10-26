@@ -200,8 +200,14 @@ def is_filler(text: str) -> bool:
 
 
 ECHO_SIMILARITY = 0.6
-ORDINAL = re.compile(r"^(\d+)(st|nd|rd|th)$")
 """A heard word this close to one it said in the same place is its own voice, misheard."""
+ORDINAL = re.compile(r"^(\d+)(st|nd|rd|th)$")
+_ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
+_TEENS_AND_TENS = "sixteen:16 seventeen:17 eighteen:18 nineteen:19 twenty:20 thirty:30 forty:40 fifty:50"
+NUMBER_WORDS = {w: str(n) for n, w in enumerate(_ONES.split())} | dict(
+    pair.split(":") for pair in f"{_TEENS_AND_TENS} sixty:60 seventy:70 eighty:80 ninety:90".split()
+)
+"""Spoken numbers as digits: the recogniser may write "four" for the "4" it said."""
 CUT_IN_WORDS = {"no", "wait", "stop", "hold", "pause", "enough", "quiet", "cancel", "shut", "hang"}
 """Said over the reply, any one of these cuts it off, like it would a person."""
 HOLD_WORDS = CUT_IN_WORDS | {"on", "a", "second", "sec", "minute", "moment", "just", "please", "up", "no"}
@@ -209,6 +215,7 @@ HOLD_WORDS = CUT_IN_WORDS | {"on", "a", "second", "sec", "minute", "moment", "ju
 
 def _sounds_like(a: str, b: str) -> bool:
     a, b = ORDINAL.sub(r"\1", a), ORDINAL.sub(r"\1", b)  # "29th" said as "29"
+    a, b = NUMBER_WORDS.get(a, a), NUMBER_WORDS.get(b, b)  # "four" heard for "4"
     if a == b:
         return True
     return len(a) > 2 and len(b) > 2 and (a.rstrip("s") == b.rstrip("s") or _similar(a, b, ECHO_SIMILARITY))
@@ -249,7 +256,8 @@ def without_echo(heard: str, saying: str) -> str:
     it also used ("the other screen")."""
     rest, own = words(heard), words(saying)
     run = max((_run(rest, own, start) for start in range(len(own))), default=0)
-    if run >= 2 or (run == 1 and any(_sounds_like(rest[0], o) for o in own[-3:])):
+    answer = rest[0] in APPROVE or rest[0] in DENY or rest[0] in HOLD_WORDS if rest else False
+    if run >= 2 or (run == 1 and not answer and any(_sounds_like(rest[0], o) for o in own[-3:])):
         rest = rest[run:]  # one stretch only: the echo is what came just before they spoke
     return " ".join(rest)
 

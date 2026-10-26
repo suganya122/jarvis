@@ -18,6 +18,8 @@ from core.hands_free_barge import BargeIn
 from core.hands_free_types import (
     APPROVAL_LISTEN_S,
     APPROVAL_SILENCE_S,
+    ECHO_CHARS,
+    ECHO_WINDOW_S,
     SESSION_TTL_S,
     HandsFreeDeps,
     HandsFreeState,
@@ -53,6 +55,7 @@ class TurnsMixin:
     _saying: str
     _lead_in: list[str]
     _echo_of: str
+    _said_at: float
 
     async def _say(self, text: str) -> None:
         raise NotImplementedError
@@ -161,11 +164,21 @@ class TurnsMixin:
             return None
         return reply
 
-    def _minus_echo(self, heard: str | None) -> str | None:
-        """Right after a cut-in, the start of what's heard can be its own last words."""
-        echo, self._echo_of = self._echo_of, ""
-        if heard is None or not echo:
+    def _remember_said(self, spoken: str) -> None:
+        """What it just said, for a few seconds: the microphone may still be hearing it."""
+        now = self._d.clock()
+        recent = self._echo_of if now - self._said_at < ECHO_WINDOW_S else ""
+        self._echo_of, self._said_at = f"{recent} {spoken}".strip()[-ECHO_CHARS:], now
+
+    def _minus_echo(self, heard: str | None, started: float | None) -> str | None:
+        """The start of what's heard right after it spoke (an answer, a question, a cut-in) can be
+        its own last words coming back ("four minutes" from a question about a 4-minute video).
+        Not while waiting for the wake word: it says "Hey Jarvis" itself, and that mustn't eat the
+        person's."""
+        echo = self._echo_of
+        if heard is None or started is None or not echo or started - self._said_at > ECHO_WINDOW_S:
             return heard
+        self._echo_of = ""
         return without_echo(heard, echo) or None
 
     def _cut_in(self) -> bool:

@@ -1364,3 +1364,20 @@ the step itself (typing shows the actual text), and when outside content (a page
 file) led to it. Any refusal word in the answer wins ("yeah no" is a no), and silence is a no.
 Because Enter in a chat or mail app sends what was typed, `press_keys` there is now rated a
 send, not an ordinary change.
+
+## D107. It just does it; asks only before sending, paying, deleting
+
+The user wants an assistant that acts, not one that asks at every step. Defaults now allow every
+capability except sending and purchases; destructive steps always ask (that's the step's risk,
+not a setting). Settings saved with the old "ask for everything" default are upgraded on load;
+any choice the user made stays. After outside content (a page, a file, command output) is in the
+conversation, only steps that reach the computer still ask (commands, files, typing into other
+apps, routines, memory): clicking around in its own browser after reading a page no longer does.
+The prompt tells the model to take the obvious choice instead of asking "do you want…?".
+
+Its own voice was also being taken for answers: it asked about a "4 minutes, 23 seconds" video
+and heard "four minutes" as the reply. For four seconds after it speaks, the start of what's
+heard is checked against what it said (numbers as words or digits) and its own words dropped;
+a lone "yes"/"no" always counts. Not while waiting for the wake word, which it says itself.
+Tests run with strict approvals by default (they exercise the approval flow); the shipped
+defaults have their own tests (`real_defaults`).

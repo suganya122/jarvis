@@ -15,6 +15,20 @@ FOCUS_STEALING_TOOLS = frozenset(
 )  # fmt: skip
 
 
+REACHES_THE_COMPUTER = frozenset(
+    {
+        Capability.SHELL_RUN,
+        Capability.FS_WRITE,
+        Capability.INPUT_CONTROL,
+        Capability.SCHEDULE,
+        Capability.MEMORY,
+    }
+)
+"""After reading outside content (a page, a file, command output), steps with these still ask: a
+planted instruction could otherwise run commands, change files, type into the user's apps, or
+leave something behind that acts later. Clicking around in its own browser doesn't ask."""
+
+
 class Decision(BaseModel):
     action: Literal["allow", "ask", "deny"]
     reason: str
@@ -54,7 +68,7 @@ def decide(
     if direct:
         # The user typed this exact command; nothing the model read can have caused it.
         return Decision(action="allow", reason="you asked for this directly")
-    if tainted and risk is not RiskLevel.READ:
+    if tainted and risk is not RiskLevel.READ and set(caps) & REACHES_THE_COMPUTER:
         return Decision(
             action="ask",
             reason="this chat contains content from outside (files, pages, command output)",

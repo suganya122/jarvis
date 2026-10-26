@@ -82,7 +82,7 @@ class HandsFree(TurnsMixin):
         self._barge = None
         self._saying = ""  # what this request's reply has said so far (its echo isn't a cut-in)
         self._lead_in: list[str] = []  # the sound of someone cutting in, for the next request
-        self._echo_of = ""  # what it was saying when cut off: kept out of that next request
+        self._echo_of, self._said_at = "", 0.0  # its last words: kept out of what's heard right after
         self._told = ""
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -196,8 +196,7 @@ class HandsFree(TurnsMixin):
         await self._d.screen.voice_rest()  # the conversation stays in the box for a while
 
     async def _conversation(self, text: str, ack: bool = True) -> None:
-        """ack: say "Yes?" when called by name alone. The talk key skips it: the box already
-        shows it's listening, and every spoken word costs time."""
+        """ack: "Yes?" when called by name alone (not for the talk key: the box shows it's listening)."""
         silence_s = self._d.settings().silence_s
         live = self._d.settings().stay_live
         self._offline = False
@@ -330,7 +329,7 @@ class HandsFree(TurnsMixin):
         finally:
             self._consuming = False
             await self._drop_stream(stream, abort=final is None)
-        return self._minus_echo((final or text).strip() or None)
+        return self._minus_echo((final or text).strip() or None, None if wake else started)
 
     async def _wait_quiet(self) -> None:
         """Let the room go quiet (frames are read, nothing is transcribed)."""
@@ -398,3 +397,4 @@ class HandsFree(TurnsMixin):
             if self.state == "speaking":
                 self.state = before  # e.g. back to waiting after a Read aloud
             self._deaf_until = self._d.clock() + SPEAK_TAIL_S
+            self._remember_said(spoken)

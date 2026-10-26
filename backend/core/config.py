@@ -20,11 +20,22 @@ class ServerConfig(BaseModel):
     max_concurrent_chats: int = Field(default=3, ge=1, le=10)
 
 
+ASK_FIRST = (Capability.SEND_EXTERNAL, Capability.PURCHASE)
+
+
 def default_policies() -> dict[Capability, PolicyMode]:
-    # Reading files inside the allowed folders is the only thing allowed without asking.
-    policies: dict[Capability, PolicyMode] = {c: "ask" for c in Capability}
-    policies[Capability.FS_READ] = "allow"
-    return policies
+    """Like a real assistant: it just does what it's asked, and asks first only before sending
+    something to someone or spending money. Anything that deletes or can't be undone always asks
+    too (that's the step's risk, not a setting), and so do changes after reading outside content
+    that reach beyond its own browser (see policy.decide)."""
+    return {c: "ask" if c in ASK_FIRST else "allow" for c in Capability}
+
+
+def _was_old_default(policies: dict[Capability, PolicyMode]) -> bool:
+    """Until 0.1.10 everything asked except reading files; settings saved then are upgraded."""
+    return bool(policies) and all(
+        mode == ("allow" if cap is Capability.FS_READ else "ask") for cap, mode in policies.items()
+    )
 
 
 DEFAULT_DENIED_PATHS = [
@@ -77,6 +88,12 @@ DEFAULT_SHELL_ALLOWLIST = [
 
 class ToolSettings(BaseModel):
     policies: dict[Capability, PolicyMode] = Field(default_factory=default_policies)
+
+    @field_validator("policies")
+    @classmethod
+    def _upgrade_old_default(cls, value: dict[Capability, PolicyMode]) -> dict[Capability, PolicyMode]:
+        return default_policies() if _was_old_default(value) else value
+
     allowed_roots: list[str] = Field(default_factory=lambda: ["~"])
     denied_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_DENIED_PATHS))
     shell_allowlist: list[str] = Field(default_factory=lambda: list(DEFAULT_SHELL_ALLOWLIST))
