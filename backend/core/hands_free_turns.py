@@ -20,7 +20,7 @@ from core.hands_free_types import (
     HandsFreeDeps,
     HandsFreeState,
 )
-from core.speech_text import yes_no
+from core.speech_text import MAX_SPOKEN_CHARS, SentenceSplitter, yes_no
 
 log = logging.getLogger(__name__)
 
@@ -41,15 +41,32 @@ class TurnsMixin:
     # ---- one request --------------------------------------------------------------------
 
     async def _turn(self, text: str) -> str | None:
+        """Run one request, speaking the reply sentence by sentence as it streams in (the first
+        sentence is heard while the rest is still being written). Returns only what is left to
+        say: a problem, or nothing."""
         self.state = "thinking"
-        reply: list[str] = []
         outcome: dict[str, str] = {}
         approvals: dict[str, asyncio.Task[None]] = {}
+        splitter = SentenceSplitter()
+        to_say: asyncio.Queue[str | None] = asyncio.Queue()
+        spoken = {"chars": 0, "any": 0}
+
+        async def speak_as_it_streams() -> None:
+            while (sentence := await to_say.get()) is not None:
+                if spoken["chars"] >= MAX_SPOKEN_CHARS:
+                    continue  # long replies: the rest is on screen
+                spoken["chars"] += len(sentence)
+                spoken["any"] = 1
+                cut = spoken["chars"] >= MAX_SPOKEN_CHARS
+                await self._say(sentence + (" The rest is on screen." if cut else ""))
+
+        speaker = asyncio.create_task(speak_as_it_streams())
 
         async def emit(msg: ServerMessage) -> None:
             await self._d.screen.observe(msg)
             if isinstance(msg, ChatDelta):
-                reply.append(msg.text)
+                for sentence in splitter.push(msg.text):
+                    to_say.put_nowait(sentence)
             elif isinstance(msg, ChatError):
                 outcome["error"] = msg.message
             elif isinstance(msg, ChatCancelled):
@@ -70,22 +87,29 @@ class TurnsMixin:
             self._session = await self._turn_task
             self._session_at = self._d.clock()
         except asyncio.CancelledError:
+            speaker.cancel()
             current = asyncio.current_task()
             if current is not None and current.cancelling():
                 raise  # we're being shut down
             return None  # interrupted with Stop: the turn already reported it
         except Exception:
+            speaker.cancel()
             log.exception("voice request failed")
             return "Sorry, something went wrong."
         finally:
             self._turn_task = None
             for task in approvals.values():
                 task.cancel()
+        if "cancelled" in outcome:
+            speaker.cancel()
+            return None
+        if rest := splitter.flush():
+            to_say.put_nowait(rest)
+        to_say.put_nowait(None)
+        await speaker
         if "error" in outcome:
             return f"Sorry, that didn't work. {outcome['error']}"
-        if "cancelled" in outcome:
-            return None
-        return "".join(reply).strip() or "Done."
+        return None if spoken["any"] else "Done."
 
     async def _ask_approval(self, msg: ApprovalRequested) -> None:
         self.state = "approval"

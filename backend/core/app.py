@@ -17,6 +17,7 @@ from core.api import router
 from core.auth import load_or_create_token
 from core.automation_api import router as automation_router
 from core.autostart import Autostart
+from core.control_api import router as control_router
 from core.data_api import router as data_router
 from core.data_control import wipe
 from core.plugin_api import router as plugin_router
@@ -110,6 +111,7 @@ def create_app(options: DaemonOptions) -> FastAPI:
     app.state.request_exit = options.request_exit
     app.state.wipe_requested = False
     app.include_router(router)
+    app.include_router(control_router)
     app.include_router(automation_router)
     app.include_router(data_router)
     app.include_router(plugin_router)

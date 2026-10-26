@@ -31,6 +31,14 @@ class VoiceEnv:
 
 def load_engine(config: WorkerConfig) -> VoiceEnv:
     env = VoiceEnv(config)
+    if config.apple_speech_helper:  # macOS: Apple's on-device recognition (no model to download)
+        from workers.voice.apple import AppleSpeechToText
+
+        try:
+            env.stt = AppleSpeechToText(config.apple_speech_helper)
+            return env
+        except OSError as exc:
+            env.error = f"Apple speech recognition couldn't start ({exc}); using the downloaded model"
     try:
         env.stt = VoskSpeechToText(config.stt_model_dir)  # loaded now, so the first press is instant
     except SttError as exc:

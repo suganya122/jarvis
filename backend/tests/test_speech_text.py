@@ -124,3 +124,29 @@ def test_dates_and_times_are_said_the_way_people_say_them() -> None:
     assert spoken == "It's Monday 26 October 2026, 6:29 IST."
     assert speakable("Meeting at 14:05 on 2026-01-03")[0] == "Meeting at 14:05 on 3 January 2026,"
     assert speakable("Version 2026-13-40 stays")[0] == "Version 2026-13-40 stays"
+
+
+def test_a_streaming_reply_is_cut_into_sentences_as_it_arrives() -> None:
+    from core.speech_text import SentenceSplitter
+
+    splitter = SentenceSplitter()
+    assert splitter.push("It's sunny today in Chen") == []
+    assert splitter.push("nai, about 31 degrees. Tomorrow looks ") == [
+        "It's sunny today in Chennai, about 31 degrees."
+    ]
+    assert splitter.push("similar, with rain at 3.5 pm maybe.") == []  # "3.5" isn't a sentence end
+    assert splitter.flush() == "Tomorrow looks similar, with rain at 3.5 pm maybe."
+    assert splitter.flush() == ""
+
+
+def test_short_bits_and_code_blocks_wait() -> None:
+    from core.speech_text import SentenceSplitter
+
+    splitter = SentenceSplitter()
+    assert splitter.push("Done. ") == []  # too short alone: joins the next sentence
+    assert splitter.push("I saved the file to your Documents folder. ") == [
+        "Done. I saved the file to your Documents folder."
+    ]
+    assert splitter.push("Run this:\n```\nls -la. \n```\nThat lists every file in the folder. ") == [
+        "Run this:\n```\nls -la. \n```\nThat lists every file in the folder."
+    ]

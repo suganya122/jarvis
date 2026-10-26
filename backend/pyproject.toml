@@ -33,7 +33,7 @@ include = ["contracts*", "core*", "models*", "workers*", "skills*", "plugins*"]
 
 [tool.setuptools.package-data]
 # The built web UI, copied in by packaging/build.py (not in git).
-core = ["webui/**/*"]
+core = ["webui/**/*", "macos/*.swift"]
 plugins = ["*/plugin.json"]
 "workers.common.wm" = ["gnome_extension/*"]
 workers = ["browser/*.js"]

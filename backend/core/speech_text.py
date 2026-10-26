@@ -117,3 +117,37 @@ def _say_date(match: re.Match[str]) -> str:
     if not 1 <= month <= 12 or not 1 <= day <= 31:
         return match.group(0)
     return f"{day} {MONTHS[month - 1]} {year},"
+
+
+_SENTENCE_END = re.compile(r"[.!?…](?=\s)|\n\s*\n")
+
+
+class SentenceSplitter:
+    """Cuts a streaming reply into sentences, so the first one can be spoken while the rest is
+    still being written. Never splits inside a code block or a number ("3.5"); very short pieces
+    ("Hi.") wait for the next sentence, so speech doesn't stutter."""
+
+    MIN_CHARS = 24
+
+    def __init__(self) -> None:
+        self._buffer = ""
+
+    def push(self, text: str) -> list[str]:
+        self._buffer += text
+        ready: list[str] = []
+        start = 0
+        for match in _SENTENCE_END.finditer(self._buffer):
+            end = match.end()
+            piece = self._buffer[start:end]
+            if self._buffer[:end].count("```") % 2:  # inside a code block: wait for it to close
+                continue
+            if len(piece.strip()) < self.MIN_CHARS:
+                continue
+            ready.append(piece.strip())
+            start = end
+        self._buffer = self._buffer[start:]
+        return ready
+
+    def flush(self) -> str:
+        rest, self._buffer = self._buffer.strip(), ""
+        return rest

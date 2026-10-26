@@ -161,52 +161,59 @@ elif [ "$YES" != "1" ] && has_tty; then
   unset KEY
 fi
 
-if [ "${JARVIS_SKIP_VOICE:-0}" != "1" ]; then
+if [ "$OS" = mac ]; then
+  say "Speech: Apple's on-device recognition and your Mac's own voices (nothing to download)."
+elif [ "${JARVIS_SKIP_VOICE:-0}" != "1" ]; then
   "$PY" -m core.cli setup-voice || warn "Speech model not installed; run: jarvis-cli setup-voice"
   if ask "Install the natural voice (about 100 MB; Piper, GPL-3.0, run as a separate program)?" y; then
     "$PY" -m core.cli install-voice --yes || warn "Natural voice not installed; it will use the computer's voice."
   fi
 fi
 
-# ---- 6. macOS: a small Jarvis.app, so macOS asks for the microphone and Accessibility -----
+# ---- web tasks (search, compare, book): a Chrome-family browser ----------------------------
+have_browser() {
+  if [ "$OS" = mac ]; then
+    [ -d "/Applications/Google Chrome.app" ] || [ -d "$HOME/Applications/Google Chrome.app" ] || [ -d "/Applications/Microsoft Edge.app" ]
+  else
+    command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || command -v microsoft-edge >/dev/null 2>&1
+  fi
+}
+if [ "${JARVIS_SKIP_BROWSER:-0}" != "1" ] && ! have_browser; then
+  if ask "Web tasks (searching, comparing, booking) use Chrome, which isn't installed. Download a private Chromium for Jarvis (about 150 MB)?" y; then
+    "$PY" -m playwright install chromium || warn "Chromium wasn't downloaded; install Google Chrome for web tasks."
+  else
+    warn "Web tasks need Google Chrome (or run: $PY -m playwright install chromium)."
+  fi
+fi
+
+# ---- 6. macOS: Jarvis.app (menu bar, ⌃⌥Space, Apple speech), built from the installed sources --
 LAUNCH="$BIN_DIR/jarvis"
 if [ "$OS" = mac ]; then
   APP="$HOME/Applications/$NAME.app"
+  SRC="$("$PY" -c 'import core, pathlib; print(pathlib.Path(core.__file__).parent / "macos")')"
   say "Building ${APP}…"
-  mkdir -p "$APP/Contents/MacOS" "$TMP/swift"
-  cat > "$TMP/swift/main.swift" <<EOF
-// Starts the assistant as a child process, so macOS attributes the microphone and
-// Accessibility to $NAME.app (and asks once), and stops it when this app is quit.
-import Foundation
-let child = Process()
-child.executableURL = URL(fileURLWithPath: "$PY")
-child.arguments = ["-m", "core"]
-for sig in [SIGTERM, SIGINT] {
-    signal(sig, SIG_IGN)
-    let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { child.terminate(); exit(0) }
-    source.resume()
-}
-child.terminationHandler = { exit(\$0.terminationStatus) }
-try child.run()
-dispatchMain()
-EOF
-  cat > "$APP/Contents/Info.plist" <<EOF
+  rm -rf "$APP" && mkdir -p "$APP/Contents/MacOS"
+  cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>local.assistant.jarvis</string>
   <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>
+  <key>JarvisPython</key><string>$PY</string>
   <key>NSMicrophoneUsageDescription</key><string>$NAME listens for its wake word and your requests. Speech is recognised on this Mac.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>$NAME turns what you say into text, on this Mac.</string>
   <key>NSAppleEventsUsageDescription</key><string>$NAME arranges and switches windows when you ask it to.</string>
 </dict></plist>
-EOF
-  swiftc -O "$TMP/swift/main.swift" -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are the command line tools installed?)"
+PLIST
+  swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
   codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
+  "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
   LAUNCH="$APP/Contents/MacOS/$NAME"
 fi
 
@@ -223,7 +230,8 @@ echo
 say "Done. Say \"Jarvis, what time is it?\""
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "   (Add $BIN_DIR to your PATH to use the jarvis commands.)" ;; esac
 if [ "$OS" = mac ]; then
-  echo "   macOS will ask to use the microphone: click Allow. To arrange windows, also allow $NAME in"
-  echo "   System Settings → Privacy & Security → Accessibility."
+  echo "   Jarvis is in the menu bar (the small ring). Hold ⌃⌥Space and talk, or say \"Jarvis\"."
+  echo "   macOS asks once for the microphone and speech recognition: click Allow."
+  echo "   To arrange windows and control apps, allow ${NAME} in System Settings → Privacy & Security → Accessibility."
 fi
 echo "   Check the microphone: jarvis-cli check-voice     Uninstall: jarvis-uninstall"

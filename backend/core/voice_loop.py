@@ -1,7 +1,10 @@
 """Wires the hands-free loop to the rest of the daemon: the ears process, the speech worker,
 the overlay, and the chat. Nothing here decides anything; see core/hands_free.py."""
 
+import asyncio
 import logging
+import os
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -23,6 +26,18 @@ from core.worker_host import WorkerHost, WorkerUnavailable
 
 log = logging.getLogger(__name__)
 STREAM_PREFIX = "hf-"
+WELCOMED = ".welcomed"
+"""In the data folder once the first-start hello has been shown."""
+
+
+def apple_speech_helper(engine: str) -> str:
+    """macOS: Jarvis.app's executable, for Apple's on-device speech recognition ('' if not used)."""
+    if sys.platform != "darwin" or engine == "vosk":
+        return ""
+    found = os.environ.get("JARVIS_SPEECH_HELPER") or str(
+        Path.home() / "Applications" / "Jarvis.app" / "Contents" / "MacOS" / "Jarvis"
+    )
+    return found if Path(found).is_file() else ""
 
 
 class _Recognizer:
@@ -69,6 +84,7 @@ class VoiceLoop:
         self._chat = chat
         self._overlay = overlay
         self._for_voice = for_voice
+        self._welcome: asyncio.Task[None] | None = None
         self._begin_context = begin_context
         self.ears = EarsHost(self._frame, extra_env, preferred_mic=lambda: settings().voice.microphone)
         self._mic_setting = settings().voice.microphone
@@ -110,6 +126,20 @@ class VoiceLoop:
         self.refresh_voice()
         await self.ears.start()
         await self.loop.start()
+        marker = self._data_dir / WELCOMED
+        if not marker.exists():
+            marker.touch()
+            self._welcome = asyncio.create_task(self._say_hello())
+
+    async def _say_hello(self) -> None:
+        """The first time it starts (right after installing): the box, a hello, a spoken "ready"."""
+        for _ in range(40):  # let the overlay and the ears come up
+            if self.loop.state != "off" or self.ears.available is not None:
+                break
+            await asyncio.sleep(0.25)
+        talk = "hold ⌃⌥Space" if sys.platform == "darwin" else "use your voice shortcut"
+        await self._overlay.welcome(f"Hi, I'm Jarvis. Say “Jarvis”, or {talk}, and tell me what to do.")
+        await self.loop.say_now("Jarvis is ready.")
 
     def refresh_voice(self) -> None:
         """Pick up the natural voice if it has been installed since the last look."""

@@ -165,6 +165,12 @@ class OverlayController:
         """A new conversation: the box starts empty."""
         self._thread = []
 
+    async def welcome(self, text: str, hide_after: float = 20.0) -> None:
+        """First start: show the box with a hello, so you can see it's there."""
+        self.voice_begin()
+        self._add(OverlayItem(kind="answer", text=text))
+        await self._show(OverlayView(phase="done"), hide_after=hide_after)
+
     async def voice_rest(self) -> None:
         """The conversation is over: keep it on screen for a while, then tidy away."""
         if self.view is not None and self._enabled():

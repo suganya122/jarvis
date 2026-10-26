@@ -63,6 +63,7 @@ class HandsFree(TurnsMixin):
         self._dropped = False
         self._woken = False
         self.floor = NoiseFloor()
+        self._speak_lock = asyncio.Lock()
         self._tasks: set[asyncio.Future[None]] = set()
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -94,6 +95,10 @@ class HandsFree(TurnsMixin):
         if self._mic_on:
             await self._d.ears.listen(False)
             await self._d.ears.listen(True)
+
+    def finish_now(self) -> None:
+        """The talk key was let go: what was said so far is the request, no silence wait."""
+        self._inbox.put_nowait(("finish", None))
 
     def wake_now(self) -> None:
         """The voice shortcut: start a conversation as if the wake word had been said."""
@@ -174,7 +179,7 @@ class HandsFree(TurnsMixin):
             self._d.on_wake()
             self._d.screen.voice_begin()
             await self._d.screen.voice_show("listening", status="Listening…")
-            await self._conversation("")
+            await self._conversation("", ack=False)
             await self._d.screen.voice_rest()
             return
         if self._dropped:  # someone else's conversation: wait for it to stop, don't reopen mid-sentence
@@ -190,11 +195,15 @@ class HandsFree(TurnsMixin):
         await self._conversation(command)
         await self._d.screen.voice_rest()  # the conversation stays in the box for a while
 
-    async def _conversation(self, text: str) -> None:
+    async def _conversation(self, text: str, ack: bool = True) -> None:
+        """ack: say "Yes?" when called by name alone. The talk key skips it: the box already
+        shows it's listening, and every spoken word costs time."""
         silence_s = self._d.settings().silence_s
         while True:
             if not text:
-                await self._say(ACK)
+                if ack:
+                    await self._say(ACK)
+                ack = True
             elif is_end_phrase(text):
                 await self._say(END_ACK)
                 return
@@ -242,6 +251,11 @@ class HandsFree(TurnsMixin):
                     return None
                 if kind == "wake" and wake:
                     return None  # the shortcut was pressed: _cycle starts a conversation
+                if kind == "finish":
+                    if not text:
+                        return None  # let go before saying anything
+                    final = await self._finish(stream, text)
+                    break
                 if kind == "frame":
                     pcm_b64, level = data
                     self.floor.update(level)
@@ -342,7 +356,11 @@ class HandsFree(TurnsMixin):
         if not spoken:
             return
         if cut:
-            spoken += " The rest is in your chat history."
+            spoken += " The rest is on screen."
+        async with self._speak_lock:  # one voice at a time: a reply's sentences, then a question
+            await self._say_now(spoken)
+
+    async def _say_now(self, spoken: str) -> None:
         before, self.state, self._speaking = self.state, "speaking", True
         try:
             await self._d.ears.say(spoken)

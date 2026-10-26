@@ -267,7 +267,7 @@ class OverlayStatus(BaseModel):
 
 
 class VoiceCommandIn(BaseModel):
-    action: Literal["toggle_chat", "toggle_dictation", "stop", "approve", "deny"]
+    action: Literal["toggle_chat", "toggle_dictation", "stop", "approve", "deny", "finish"]
     """approve / deny answer the approval the voice overlay is showing."""
 
 
@@ -326,7 +326,7 @@ async def voice_status(request: Request) -> VoiceStatus:
         natural_voice_command=f"{cli} install-voice'",
     )
     return VoiceStatus(
-        engine_running=bool(rt.stt_model_dir()) and rt.worker_alive("voice"),
+        engine_running=rt.stt_ready() and rt.worker_alive("voice"),
         models=models,
         shortcut_commands=commands,
         overlay=overlay,
@@ -362,19 +362,6 @@ async def delete_model(request: Request, model_id: str) -> None:
     await rt.store.audit("user", "model.delete", {"model": spec.id})
 
 
-class SayIn(BaseModel):
-    text: str = Field(min_length=1, max_length=4000)
-
-
-@router.post("/voice/say")
-async def voice_say(request: Request, body: SayIn) -> dict[str, bool]:
-    """Read a reply aloud through the assistant's own voice (Piper or the OS voice)."""
-    loop = _rt(request).voice_loop
-    if loop is None:
-        raise HTTPException(409, "voice output isn't running (started with --no-hands-free)")
-    return {"spoken": await loop.say(body.text)}
-
-
 @router.post("/voice/command", status_code=204)
 async def voice_command(request: Request, body: VoiceCommandIn) -> None:
     """Used by desktop keyboard shortcuts (see core/cli.py) to drive the open UI."""
@@ -382,6 +369,10 @@ async def voice_command(request: Request, body: VoiceCommandIn) -> None:
     loop = rt.voice_loop
     if body.action == "toggle_chat" and loop is not None and loop.loop.state != "off":
         loop.loop.wake_now()  # hands-free is running: the shortcut is the same as saying the wake word
+        return
+    if body.action == "finish":  # the talk key was let go: send what was said, no silence wait
+        if loop is not None:
+            loop.loop.finish_now()
         return
     if body.action in ("toggle_chat", "toggle_dictation") and not rt.overlay.listening:
         rt.context.begin()  # where the user is right now: before anything else can change it

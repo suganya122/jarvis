@@ -1220,3 +1220,44 @@ are recognised (`core.context.retarget`, no model call).
 - **Can't be tested in CI:** the microphone and Accessibility prompts themselves, which
   need a person at a Mac.
 
+## D99. macOS first: a menu bar app, ⌃⌥Space, Apple's own speech
+
+- **Jarvis.app is Swift** (`backend/core/macos/*.swift`, shipped inside the Python package). It
+  is compiled on your Mac by `install.sh` and ad-hoc signed. On every push, CI compiles it on a
+  macOS runner and starts it.
+  - **Menu bar:** an orb in the menu bar (a ring, filled while busy) with status, Talk,
+    Pause listening, Settings…, Show log and Quit. No Dock icon, no window of its own.
+  - **⌃⌥Space** through Carbon hot keys, which need no Accessibility permission: press starts
+    listening at once (no spoken "Yes?"), and letting go sends what was said with no
+    silence wait.
+  - **The assistant** (`python -m core`) runs as Jarvis.app's child, restarted if it stops,
+    logging to `~/Library/Logs/Jarvis.log`. That's why macOS asks for the microphone, speech
+    recognition and Accessibility once, for "Jarvis".
+  - **`Jarvis --speech`** is Apple's Speech framework with `requiresOnDeviceRecognition`
+    (nothing goes to Apple's servers). The voice worker drives it instead of Vosk
+    (`workers/voice/apple.py`), so a Mac downloads no speech model.
+- **Speaking:** the Mac's own voices through `say`. Piper isn't offered on macOS.
+- **First start:** the box appears with a hello and Jarvis says "Jarvis is ready.", once.
+- **Not yet on macOS:** clicking and typing inside other apps (the Accessibility-tree hands
+  of M4 are Linux-only). Web tasks (the browser agent) and window arrangement work.
+
+## D100. Lower latency, everywhere
+
+- **Replies are spoken sentence by sentence as they stream.** The first sentence is heard
+  while the model is still writing the rest.
+  - The splitter never cuts inside a number ("3.5") or a code block.
+  - Very short pieces wait for the next sentence.
+  - One voice at a time: a reply's sentences, then any question.
+- **The talk key's release** ends the request immediately (`finish`), with no 2 s silence
+  wait.
+- **No spoken "Yes?"** when you start with the key.
+
+## D101. Secrets can't reach GitHub
+
+- `scripts/check_secrets.py` runs as a git pre-commit hook (`scripts/install-hooks.sh`) and
+  as a CI job.
+- It refuses anything shaped like an Anthropic, GitHub, AWS, Google, Slack or Telegram
+  credential, or a private key, and any `.env`, auth token or database file. Clearly fake
+  test keys are allowed.
+- Keys live only in the app data folder's `.env` (gitignored, mode 600).
+

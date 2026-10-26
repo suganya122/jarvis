@@ -120,9 +120,12 @@ def test_a_spoken_conversation_end_to_end(daemon: Daemon) -> None:
     settings["voice"]["stt_model"] = MODEL[0]  # type: ignore[index]
     daemon.api("PUT", "/api/settings", settings)
 
+    # First start: a spoken hello (and the box), so you know it's there
+    daemon.wait("the hello", lambda: daemon.spoken()[:1] == ["Jarvis is ready."])
+
     # "Jarvis, what time is it?" -> the time, spoken (an instant command: no AI call)
-    daemon.wait("the spoken time", lambda: len(daemon.spoken()) >= 1)
-    reply = daemon.spoken()[0]
+    daemon.wait("the spoken time", lambda: any(line.startswith("It's ") for line in daemon.spoken()))
+    reply = next(line for line in daemon.spoken() if line.startswith("It's "))
     assert reply.startswith("It's ") and any(ch.isdigit() for ch in reply), reply
     assert "UTC+" not in reply and not any(f"-{m:02d}-" in reply for m in range(1, 13)), (
         reply

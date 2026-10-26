@@ -172,6 +172,8 @@ class VoiceSettings(BaseModel):
     )
     silence_s: float = Field(default=2.0, ge=0.8, le=6.0)
     """Quiet time after you stop talking before a hands-free request is run."""
+    stt_engine: Literal["auto", "apple", "vosk"] = "auto"
+    """auto: Apple's on-device recognition on a Mac with Jarvis.app, else the downloaded model."""
     microphone: str = Field(default="", max_length=300)
     """Which input to listen to ("" = automatic: skips inputs that are only static or silence)."""
     follow_up_s: float = Field(default=8.0, ge=2.0, le=30.0)

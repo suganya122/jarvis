@@ -393,8 +393,8 @@ def test_the_voice_shortcut_starts_a_conversation_without_the_wake_word(
         async with rig.running():
             await rig.until(lambda: rig.hf.state == "idle")
             rig.hf.wake_now()
-            await rig.until(lambda: rig.ears.said == ["Yes?"])
             await rig.until(lambda: rig.hf.state == "listening")
+            assert rig.ears.said == []  # the talk key: straight to listening, no "Yes?"
             await rig.speak("what time is it")
             await rig.until(lambda: rig.turns == [("what time is it", None)])
 
@@ -408,5 +408,43 @@ def test_read_aloud_speaks_through_the_same_voice(monkeypatch: pytest.MonkeyPatc
         assert await rig.hf.say_now("**Hello** from [the docs](https://x.y).") is True
         assert rig.ears.said == ["Hello from the docs."]
         assert rig.hf.state == "idle"  # not stuck on "speaking"
+
+    asyncio.run(run())
+
+
+def test_the_first_sentence_is_spoken_before_the_reply_has_finished(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        heard_before_end: list[list[str]] = []
+
+        async def streaming(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
+            await emit(ChatDelta(request_id="r", text="The flight to Delhi leaves at six in the morning. "))
+            await asyncio.sleep(0.3)  # the model is still writing
+            heard_before_end.append(list(rig.ears.said))
+            await emit(ChatDelta(request_id="r", text="It costs about four thousand rupees, one way."))
+
+        rig.turn_script = streaming
+        async with rig.running():
+            await rig.speak("jarvis when is the next flight to delhi")
+            await rig.until(lambda: len(rig.ears.said) == 2)
+            assert heard_before_end == [["The flight to Delhi leaves at six in the morning."]]
+            assert rig.ears.said[1] == "It costs about four thousand rupees, one way."
+
+    asyncio.run(run())
+
+
+def test_letting_go_of_the_talk_key_sends_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        voice = VoiceSettings.model_construct(silence_s=5.0, follow_up_s=0.5)  # a long silence wait…
+        rig.hf._d.settings = lambda: voice
+        async with rig.running():
+            await rig.until(lambda: rig.hf.state == "idle")
+            rig.level, rig.rec.text = LOUD, "jarvis what time is it"
+            await rig.until(lambda: rig.hf.state == "listening")
+            started = asyncio.get_running_loop().time()
+            rig.hf.finish_now()  # …but the key was let go
+            await rig.until(lambda: len(rig.turns) == 1, timeout=2)
+            assert asyncio.get_running_loop().time() - started < 1.0
 
     asyncio.run(run())

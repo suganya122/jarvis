@@ -43,7 +43,7 @@ from core.store import Store
 from core.tool_exec import ChatPermissions, ToolExecutor
 from core.toolbox import CurrentTime, ToolRegistry
 from core.voice import VoiceHub
-from core.voice_loop import VoiceLoop
+from core.voice_loop import VoiceLoop, apple_speech_helper
 from core.watchers import WatcherService
 from core.worker_host import RemoteTool, WorkerHost
 from skills.store import SkillStore
@@ -204,6 +204,7 @@ class Runtime:
             blocked_apps=tuple(tools.blocked_apps),
             capture_max_edge=tools.capture_max_edge,
             stt_model_dir=self.stt_model_dir(),
+            apple_speech_helper=self.apple_speech_helper(),
             browser=BrowserConfig(
                 mode=self._settings.browser.mode,
                 profile_dir=str(self._data_dir / "browser"),
@@ -214,6 +215,13 @@ class Runtime:
                 min_seconds_between_pages=self._settings.browser.min_seconds_between_pages,
             ),
         )
+
+    def apple_speech_helper(self) -> str:
+        return apple_speech_helper(self._settings.voice.stt_engine)
+
+    def stt_ready(self) -> bool:
+        """Speech can be recognised: Apple's on a Mac, or a downloaded model."""
+        return bool(self.apple_speech_helper() or self.stt_model_dir())
 
     def stt_model_dir(self) -> str:
         spec = BY_ID.get(self._settings.voice.stt_model or "")
@@ -267,7 +275,7 @@ class Runtime:
             settings=lambda: self._settings,
             paused=lambda: self.paused,
             voice_worker=lambda: self.workers.get(VOICE_WORKER),
-            stt_model_ready=lambda: bool(self.stt_model_dir()),
+            stt_model_ready=self.stt_ready,
             begin_context=self.context.begin,
             for_voice=self.context.for_voice,
             extra_env=extra_env,
