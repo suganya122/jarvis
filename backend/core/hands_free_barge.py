@@ -17,6 +17,8 @@ from contracts.voice import TranscriptEvent
 from core.speech_text import is_barge_in
 
 log = logging.getLogger(__name__)
+STREAM_PREFIX = "hf-cut-"
+"""Starts like every hands-free stream ("hf-"), so its transcripts are routed back here."""
 LEAD_IN_FRAMES = 30
 """The last three seconds of sound, handed to the next request when someone cuts in."""
 ROTATE_FRAMES = 600
@@ -58,7 +60,7 @@ class BargeIn:
             while True:
                 if not self.stream or fed >= ROTATE_FRAMES:
                     await self._close()
-                    self.stream, fed = f"bi-{uuid.uuid4().hex[:12]}", 0
+                    self.stream, fed = f"{STREAM_PREFIX}{uuid.uuid4().hex[:12]}", 0
                     await self._rec.open(self.stream)
                 kind, data = await self._queue.get()
                 if self._paused():  # a spoken yes/no is being asked for: that has its own ears

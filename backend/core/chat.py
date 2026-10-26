@@ -212,6 +212,8 @@ class ChatService(RoutesMixin):
             if speculation.matches(send.text, send.session_id, len(history), tier, self._clock()):
                 source = speculation.events()  # the model already started while the user paused
                 turn.speculation = "used"
+                if speculation.request is not None:  # carry on exactly as it started
+                    messages, context = list(speculation.request.messages), speculation.request.context
             else:
                 turn.speculation = "discarded"
         seen: Counter[tuple[str, str]] = Counter()

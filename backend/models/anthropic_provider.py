@@ -25,6 +25,10 @@ from models.pricing import estimate_cost
 
 PROVIDER = "anthropic"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+STALE_REASONING = "bound to a different conversation"
+"""Claude's 400 for a thinking block whose earlier conversation changed. Leaving every such block
+out (a leading run) is always accepted, so that request is retried once without them."""
+REASONING_BLOCKS = ("thinking", "redacted_thinking")
 KEY_REJECTED = "Your Anthropic API key was rejected. Check the key in your .env file, then restart me."
 ClientFactory = Callable[[str], anthropic.AsyncAnthropic]
 
@@ -69,14 +73,24 @@ class AnthropicProvider:
             yield ModelError(code="no_api_key", message="Add your Anthropic API key in Settings.")
             return
         tier = self._config.tiers[request.tier]
+        final = None
         try:
-            async with self._open_stream(client, tier, request) as stream:
-                async for event in stream:
-                    if event.type == "content_block_start" and event.content_block.type == "thinking":
-                        yield ThinkingStarted()
-                    elif event.type == "content_block_delta" and event.delta.type == "text_delta":
-                        yield TextDelta(text=event.delta.text)
-                final = await stream.get_final_message()
+            for attempt in range(2):
+                try:
+                    async with self._open_stream(
+                        client, tier, request, keep_reasoning=attempt == 0
+                    ) as stream:
+                        async for event in stream:
+                            if event.type == "content_block_start" and event.content_block.type == "thinking":
+                                yield ThinkingStarted()
+                            elif event.type == "content_block_delta" and event.delta.type == "text_delta":
+                                yield TextDelta(text=event.delta.text)
+                        final = await stream.get_final_message()
+                    break
+                except anthropic.BadRequestError as exc:
+                    if attempt == 0 and STALE_REASONING in str(exc.body):
+                        continue  # rejected before any output: again, without the earlier reasoning
+                    raise
         except anthropic.AuthenticationError:
             yield ModelError(code="auth", message=KEY_REJECTED)
             return
@@ -97,6 +111,7 @@ class AnthropicProvider:
             # With eager input streaming the SDK raises this for tool input it can't parse.
             yield ModelError(code="provider_error", message="The model produced a malformed tool call.")
             return
+        assert final is not None
 
         # Every tool_use gets reported, even on max_tokens/refusal, so core can answer it
         # with a "not run" result; core only runs calls when stop_reason is tool_use.
@@ -118,7 +133,14 @@ class AnthropicProvider:
             },
         )
 
-    def _open_stream(self, client: anthropic.AsyncAnthropic, tier: TierConfig, request: ModelRequest) -> Any:
+    def _open_stream(
+        self,
+        client: anthropic.AsyncAnthropic,
+        tier: TierConfig,
+        request: ModelRequest,
+        *,
+        keep_reasoning: bool,
+    ) -> Any:
         system: list[dict[str, Any]] = [
             {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
         ]
@@ -130,7 +152,7 @@ class AnthropicProvider:
             # Stable system prompt first, cached; top-level cache_control also caches history.
             "system": system,
             "cache_control": {"type": "ephemeral"},
-            "messages": to_params(request.messages),
+            "messages": to_params(request.messages, keep_reasoning=keep_reasoning),
             "output_config": {"effort": tier.effort},
         }
         if request.tools:
@@ -141,7 +163,7 @@ class AnthropicProvider:
         return client.messages.stream(**kwargs)
 
 
-def to_params(messages: Iterable[ChatMessage]) -> list[dict[str, Any]]:
+def to_params(messages: Iterable[ChatMessage], *, keep_reasoning: bool = True) -> list[dict[str, Any]]:
     """Convert history to API messages, merging consecutive same-role turns.
 
     Consecutive user turns happen when a turn failed or was cancelled before the reply.
@@ -150,6 +172,8 @@ def to_params(messages: Iterable[ChatMessage]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for message in messages:
         blocks = _blocks(message)
+        if not keep_reasoning:
+            blocks = [b for b in blocks if b.get("type") not in REASONING_BLOCKS]
         if not blocks:
             continue
         role = message.role.value

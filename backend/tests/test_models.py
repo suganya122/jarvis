@@ -1,6 +1,7 @@
 from types import SimpleNamespace as NS
 from typing import Any
 
+import anthropic
 import httpx
 import pytest
 
@@ -258,3 +259,36 @@ async def test_local_provider_offline() -> None:
     events = await collect(provider, request())
     assert isinstance(events[-1], ModelError) and events[-1].code == "offline"
     assert not (await provider.status()).ready
+
+
+async def test_reasoning_claude_no_longer_accepts_is_left_out_and_the_request_retried() -> None:
+    """A thinking block whose earlier conversation changed is a 400; the same request without the
+    earlier reasoning is always accepted, so the person sees an answer, not an API error."""
+    import httpx2
+
+    calls: list[tuple[str, dict[str, Any]]] = []
+    client = fake_client(calls)
+    working = client.messages.stream
+
+    def first_fails(**kwargs: Any) -> FakeStream:
+        if not calls:
+            calls.append(("rejected", kwargs))
+            body = {"error": {"message": "messages.3.content.0: Invalid `signature` in `thinking` block. "
+                              "The block is bound to a different conversation."}}  # fmt: skip
+            response = httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com"))
+            raise anthropic.BadRequestError("bad", response=response, body=body)
+        return working(**kwargs)
+
+    client.messages.stream = first_fails
+    provider = AnthropicProvider(AnthropicConfig(), api_key=lambda: "k", client_factory=lambda _k: client)
+    blocks = [{"type": "thinking", "thinking": "", "signature": "s"}, {"type": "text", "text": "yo"}]
+    history = (
+        ChatMessage(role=Role.USER, text="first"),
+        ChatMessage(
+            role=Role.ASSISTANT, text="yo", provider_state={"provider": "anthropic", "content": blocks}
+        ),
+    )
+    events = await collect(provider, request(history=history))
+    assert isinstance(events[-1], Completed)
+    assert calls[0][1]["messages"][1]["content"] == blocks
+    assert calls[1][1]["messages"][1]["content"] == [{"type": "text", "text": "yo"}]

@@ -69,7 +69,7 @@ class FakeRecognizer:
 
     async def close(self, stream_id: str, abort: bool = False) -> None:
         self.closed.append((stream_id, abort))
-        if stream_id.startswith("bi-"):
+        if stream_id.startswith("hf-cut-"):
             return  # the cut-in listener letting go: the person may still be talking
         if not abort and self.hf is not None:
             self.hf.on_transcript(TranscriptEvent(stream_id=stream_id, kind="final", text=self.text))
@@ -610,3 +610,12 @@ def test_wait_just_makes_it_listen(monkeypatch: pytest.MonkeyPatch) -> None:
             await rig.until(lambda: rig.ears.said == ["It is noon."])
 
     asyncio.run(run())
+
+
+def test_the_cut_in_listeners_transcripts_reach_the_voice_loop() -> None:
+    """The daemon routes transcripts by stream name: the cut-in listener's must come back to it
+    (they once went to the chat window's dictation instead, so "wait" was never heard)."""
+    from core.hands_free_barge import STREAM_PREFIX
+    from core.voice_loop import VoiceLoop
+
+    assert VoiceLoop.owns(TranscriptEvent(stream_id=f"{STREAM_PREFIX}abc", kind="partial", text="wait"))

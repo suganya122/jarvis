@@ -31,6 +31,9 @@ class Speculation:
     task: asyncio.Task[None] | None = None
     completed: Completed | None = None
     used: bool = False
+    request: ModelRequest | None = None
+    """What was sent. A turn that adopts this start carries on with exactly these messages and
+    context: Claude's reasoning stays valid only while everything before it is byte-identical."""
 
     def matches(
         self, text: str, session_id: str | None, history_len: int, tier: ModelTier, now: float
@@ -68,7 +71,12 @@ def start(
     now: float,
 ) -> Speculation:
     spec = Speculation(
-        text=normalize(text), session_id=session_id, history_len=history_len, tier=request.tier, started=now
+        text=normalize(text),
+        session_id=session_id,
+        history_len=history_len,
+        tier=request.tier,
+        started=now,
+        request=request,
     )
 
     async def pump() -> None:

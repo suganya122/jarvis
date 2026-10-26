@@ -90,6 +90,20 @@ async def test_changed_final_discards_the_speculation(tmp_path: Path) -> None:
     assert (await rt.store.cost_summary()).today_tokens > 0  # discarded but still paid for: recorded
 
 
+async def test_an_adopted_start_carries_on_with_exactly_what_it_sent(tmp_path: Path) -> None:
+    """The steps after a tool call resend the conversation; Claude only accepts the first step's
+    reasoning back if everything before it is byte-identical, so the words as heard during the pause
+    and the context gathered then are kept, not the final transcript's capitals or a new context."""
+    provider = FakeProvider(script=[FakeStep(tool_calls=[("peek", {"value": "x"})]), FakeStep(text="done")])
+    rt = await runtime(tmp_path, provider)
+    spec = await rt.chat.speculate(None, "peek at the notes", ModelTier.CHEAP)
+    assert spec is not None
+    await rt.chat.run(send("Peek at the notes."), Sink(), spec)
+    first, second = provider.requests
+    assert second.messages[: len(first.messages)] == first.messages
+    assert second.context == first.context
+
+
 async def test_speculation_never_runs_tools_before_the_final(tmp_path: Path) -> None:
     provider = FakeProvider(script=[FakeStep(tool_calls=[("note", {"value": "x"})]), FakeStep(text="done")])
     rt = await runtime(tmp_path, provider)
