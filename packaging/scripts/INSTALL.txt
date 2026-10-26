@@ -1,0 +1,28 @@
+Installing from this bundle
+===========================
+
+You need Python 3.12 or newer. Nothing is downloaded during install: every library is in
+the wheels/ folder.
+
+1. Check the download (recommended). Next to this zip on the release page are
+   SHA256SUMS and SHA256SUMS.sigstore.json. See "Verifying a download" in the README.
+
+2. Install
+   macOS / Linux:  sh install.sh
+   Windows:        powershell -ExecutionPolicy Bypass -File install.ps1
+
+3. Start
+   macOS / Linux:  local-assistant --open
+   Windows:        Start Menu -> local-assistant
+
+The browser opens the app at http://127.0.0.1:8765 with your private link.
+
+Why no "unidentified developer" warnings: the bundle is plain Python plus install
+scripts, not a signed .app or .exe (code-signing certificates cost money). You run the
+script yourself, so Gatekeeper / SmartScreen don't need to be bypassed. If Windows says
+the script is blocked, right-click install.ps1 -> Properties -> Unblock, or use the
+command above.
+
+Uninstall (removes the program, your data, the keychain entry and the login item):
+   macOS / Linux:  sh ~/.local/opt/local-assistant/uninstall.sh
+   Windows:        powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\Programs\local-assistant\uninstall.ps1"

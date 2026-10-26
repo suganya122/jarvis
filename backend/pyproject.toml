@@ -1,0 +1,64 @@
+[project]
+name = "local-assistant"  # = APP_ID in contracts/app.py; change both together
+version = "0.1.0"
+description = "Local daemon for a cross-platform personal AI assistant"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22,<1",
+    "anthropic>=2.3,<3",
+    "fastapi>=0.162,<1",
+    "httpx>=0.28,<1",
+    "jeepney>=0.9,<1 ; sys_platform == 'linux'",
+    "keyring>=25.7,<26",
+    "platformdirs>=4.13,<5",
+    "playwright>=1.64,<2",
+    "pillow>=13.0,<14",
+    "pydantic>=2.14,<3",
+    "python-dotenv>=1.2,<2",
+    "sounddevice>=0.5,<1",
+    "uvicorn[standard]>=0.54,<1",
+    "vosk>=0.3.45,<0.4",
+]
+
+[project.scripts]
+local-assistant = "core.__main__:main"
+
+[project.optional-dependencies]
+dev = ["mypy>=2.4", "pytest>=9.1", "pytest-asyncio>=1.4", "ruff>=0.17", "pip-audit>=2.9"]
+
+[tool.setuptools.packages.find]
+include = ["contracts*", "core*", "models*", "workers*", "skills*", "plugins*"]
+
+[tool.setuptools.package-data]
+# The built web UI, copied in by packaging/build.py (not in git).
+core = ["webui/**/*"]
+plugins = ["*/plugin.json"]
+"workers.common.wm" = ["gnome_extension/*"]
+workers = ["browser/*.js"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
+ignore = ["S101", "RUF012", "SIM905"]  # RUF012: pydantic copies mutable defaults per instance
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S108", "S603", "S607"]
+"tests/evals/*" = ["S105", "S106", "E501"]  # scenario tables read best one per line
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+packages = ["contracts", "core", "models", "workers", "skills", "plugins"]
+
+[[tool.mypy.overrides]]
+module = ["jeepney", "jeepney.*", "gi", "gi.*", "vosk", "vosk.*", "sounddevice"]
+ignore_missing_imports = true

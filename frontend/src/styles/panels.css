@@ -1,0 +1,241 @@
+/* ---- pages (Skills, Memory, Settings…) ---- */
+
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 var(--space-3) var(--space-4);
+  /* Keep focused or scrolled-to controls clear of the sticky header. */
+  scroll-padding-top: 96px;
+}
+
+.page-wide {
+  max-width: 1100px;
+}
+
+.page-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
+}
+
+.page-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.page-head h2:focus {
+  outline: none;
+}
+
+.page-status {
+  position: sticky;
+  top: 64px;
+  z-index: 1;
+  margin: 0 0 var(--space-3);
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.page section {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.page section:last-child {
+  border-bottom: none;
+}
+
+.page h3 {
+  font-size: 1.05rem;
+  margin: 0 0 var(--space-2);
+}
+
+/* ---- loading, empty and error states ---- */
+
+.state {
+  color: var(--muted);
+  margin: var(--space-3) 0;
+}
+
+.state-empty {
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.state-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+}
+
+.state-error p {
+  margin: 0;
+  flex: 1;
+}
+
+/* ---- the right panel ---- */
+
+.right-panel h3 {
+  font-size: 0.95rem;
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+}
+
+.spend {
+  margin-bottom: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+
+.spend .num {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.spend .muted {
+  color: var(--muted);
+}
+
+.spend meter {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 4px;
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.spend meter::-webkit-meter-bar {
+  background: var(--surface-2);
+  border: none;
+  border-radius: 999px;
+  height: 6px;
+}
+
+.spend meter::-webkit-meter-optimum-value {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.spend meter::-webkit-meter-suboptimum-value {
+  background: var(--warn);
+  border-radius: 999px;
+}
+
+.spend meter::-webkit-meter-even-less-good-value {
+  background: var(--danger);
+  border-radius: 999px;
+}
+
+.spend meter::-moz-meter-bar {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.cost-warning .num {
+  color: var(--warn);
+}
+
+.cost-capped .num,
+.cost-note {
+  color: var(--danger);
+}
+
+.cost-note {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.perm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.perm-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.perm-state {
+  white-space: nowrap;
+}
+
+.perm-allowed {
+  color: var(--accent);
+}
+
+.perm-ask,
+.perm-always-asks {
+  color: var(--warn);
+}
+
+.perm-denied {
+  color: var(--danger);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.row.end {
+  justify-content: flex-end;
+}
+
+.row input[type="password"] {
+  flex: 1;
+  min-width: 200px;
+}
+
+.radio {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.radio input {
+  width: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+

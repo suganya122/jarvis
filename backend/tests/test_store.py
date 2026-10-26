@@ -1,0 +1,78 @@
+import sqlite3
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from contracts.model import ChatMessage, Completed, Role, Usage
+from core import db
+from core.redact import Redactor
+from core.store import Store
+
+
+async def make_store(tmp_path: Path) -> Store:
+    return Store(await db.connect(tmp_path / "t.sqlite3"), Redactor())
+
+
+async def test_migrations_are_idempotent(tmp_path: Path) -> None:
+    conn = await db.connect(tmp_path / "t.sqlite3")
+    assert await db.schema_version(conn) == len(db.MIGRATIONS)
+    await db.migrate(conn)
+    assert await db.schema_version(conn) == len(db.MIGRATIONS)
+    await conn.close()
+
+
+async def test_audit_log_is_append_only_and_redacted(tmp_path: Path) -> None:
+    store = await make_store(tmp_path)
+    await store.audit("user", "x", {"note": "key sk-ant-abcdefghijklmnop"})
+    conn = store._conn
+    async with conn.execute("SELECT detail FROM audit_log") as cur:
+        row = await cur.fetchone()
+    assert row is not None and "sk-ant-abc" not in row["detail"]
+    with pytest.raises(sqlite3.IntegrityError):
+        await conn.execute("DELETE FROM audit_log")
+    with pytest.raises(sqlite3.IntegrityError):
+        await conn.execute("UPDATE audit_log SET actor='evil'")
+    await store.close()
+
+
+async def test_history_keeps_provider_state(tmp_path: Path) -> None:
+    store = await make_store(tmp_path)
+    sid = await store.ensure_session(None, "first message")
+    assert await store.ensure_session(sid, "ignored") == sid
+    state = {"provider": "anthropic", "content": [{"type": "text", "text": "hi"}]}
+    await store.append_message(sid, "t1", ChatMessage(role=Role.USER, text="hello"))
+    await store.append_message(sid, "t1", ChatMessage(role=Role.ASSISTANT, text="hi", provider_state=state))
+    history = await store.history(sid)
+    assert [m.role for m in history] == [Role.USER, Role.ASSISTANT]
+    assert history[1].provider_state == state
+    assert await store.delete_session(sid)
+    assert await store.history(sid) == []
+    await store.close()
+
+
+async def test_cost_summary_buckets_by_day_and_month(tmp_path: Path) -> None:
+    store = await make_store(tmp_path)
+    done = Completed(
+        provider="anthropic",
+        model="m",
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=10, output_tokens=5),
+        cost_usd=0.25,
+    )
+    await store.record_cost("t", done)
+    summary = await store.cost_summary()
+    assert summary.today_usd == pytest.approx(0.25)
+    assert summary.month_tokens == 15
+    future = await store.cost_summary(datetime.now(UTC) + timedelta(days=40))
+    assert future.today_usd == 0
+    await store.close()
+
+
+async def test_settings_default_then_saved(tmp_path: Path) -> None:
+    store = await make_store(tmp_path)
+    settings = await store.load_settings()
+    assert settings.provider == "anthropic"
+    await store.save_settings(settings.model_copy(update={"provider": "local"}))
+    assert (await store.load_settings()).provider == "local"
+    await store.close()

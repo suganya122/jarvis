@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Test-only desktop packages for the Hands fixture and voice overlay (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 xvfb at-spi2-core dbus espeak-ng xdotool x11-utils
+        working-directory: .
+      - name: Cache the small speech model used by the voice tests (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~/test-models
+          key: vosk-small-en-us-0.15-30f26242
+      - name: Fetch the small speech model if not cached (checksum-verified)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: .
+        run: |
+          if [ ! -d ~/test-models/vosk-model-small-en-us-0.15 ]; then
+            mkdir -p ~/test-models && cd ~/test-models
+            curl -sSL -o m.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+            echo "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498  m.zip" | sha256sum -c -
+            unzip -q m.zip && rm m.zip
+          fi
+          echo "ASSISTANT_TEST_STT_MODEL=$HOME/test-models/vosk-model-small-en-us-0.15" >> "$GITHUB_ENV"
+      - run: python -m pip install -r requirements-dev.txt
+      - run: ruff check . ../packaging && ruff format --check . ../packaging
+        shell: bash
+      - run: mypy
+      - run: pytest -q
+      - run: pip-audit -r requirements.txt
+        if: matrix.os == 'ubuntu-latest'
+
+  installer:
+    # The one-line installers (install.sh, install.ps1) on each OS, with a wheel built here.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+      JARVIS_YES: "1"
+      JARVIS_SKIP_VOICE: "1"
+      JARVIS_SKIP_START: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the wheel
+        run: python packaging/build.py
+      - name: Install with install.sh, start, uninstall (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export JARVIS_WHEEL="$(ls "$PWD"/dist/*.whl)" JARVIS_REQUIREMENTS="$PWD/backend/requirements.txt"
+          bash install.sh
+          if [ "$RUNNER_OS" = macOS ]; then test -x ~/Applications/Jarvis.app/Contents/MacOS/Jarvis; fi
+          ~/.local/bin/jarvis --port 8798 --fake-model --no-overlay --no-hands-free & sleep 1
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8798/api/health && break; sleep 0.5; done
+          curl -sf http://127.0.0.1:8798/ | grep -q "<html"
+          kill %1 || true
+          ~/.local/bin/jarvis-uninstall
+          test ! -e ~/.local/share/jarvis-app
+      - name: Install with install.ps1, start, uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:JARVIS_WHEEL = (Get-ChildItem dist\*.whl).FullName
+          $env:JARVIS_REQUIREMENTS = (Resolve-Path backend\requirements.txt).Path
+          .\install.ps1
+          $bin = "$env:LOCALAPPDATA\JarvisApp\bin"
+          Start-Process "$bin\jarvis.cmd" -ArgumentList "--port 8798 --fake-model --no-overlay --no-hands-free" -WindowStyle Hidden
+          $ok = $false
+          foreach ($i in 1..60) { try { Invoke-RestMethod http://127.0.0.1:8798/api/health | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 500 } }
+          if (-not $ok) { throw "daemon did not start" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis.lnk")) { throw "no Start menu entry" }
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev

@@ -1,0 +1,233 @@
+/* The chat: messages, compact action steps, the amber approval card, the composer. */
+
+.banner {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+}
+
+.banner.warn {
+  background: var(--warn-bg);
+  border-color: var(--warn);
+  color: var(--warn-text);
+}
+
+.messages,
+.empty {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3) 0;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding-top: clamp(24px, 20vh, 160px);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-3);
+}
+
+.msg-user {
+  align-items: flex-end;
+}
+
+.bubble {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  color: var(--text);
+}
+
+.msg-user .bubble {
+  background: var(--user-bubble);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  max-width: 80%;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta.target {
+  align-self: flex-end;
+}
+
+.meta.error,
+.error-line {
+  color: var(--danger);
+}
+
+.instant {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.meta button.link {
+  font-size: inherit;
+}
+
+.skill-note {
+  color: var(--accent);
+}
+
+.skill-note .tag-skill {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  font-size: 0.75rem;
+}
+
+.skill-demoted,
+.skill-failed {
+  color: var(--danger);
+}
+
+.ok-line {
+  color: var(--accent);
+}
+
+/* ---- action steps ---- */
+
+.tool {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  margin: 4px 0;
+  background: var(--surface);
+  max-width: 100%;
+}
+
+.tool-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+}
+
+.tool-summary {
+  flex: 1;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+
+.tag-verified {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  padding: 0 6px;
+  font-size: 0.75rem;
+}
+
+.tool-status,
+.tool-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.tool-note {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.tool-denied .tool-status,
+.tool-blocked .tool-status,
+.tool-error .tool-status {
+  color: var(--danger);
+}
+
+.tool-output summary,
+.approval summary {
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.tool-output pre,
+.approval pre {
+  max-height: 200px;
+  overflow: auto;
+  background: var(--surface-2);
+  padding: 8px;
+  border-radius: var(--radius-small);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.risk {
+  font-size: 0.75rem;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.risk-destructive,
+.risk-external_send,
+.risk-purchase {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* ---- screenshots ---- */
+
+.shot {
+  margin: 8px 0 0;
+}
+
+.shot-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.shot-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.shot-highlight {
+  position: absolute;
+  border: 3px solid var(--warn);
+  border-radius: var(--radius-small);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.25);
+}
+
+.shot-label {
+  position: absolute;
+  bottom: 100%;
+  left: -3px;
+  background: var(--warn);
+  color: #0b0b0c;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-small) var(--radius-small) var(--radius-small) 0;
+  white-space: nowrap;
+}
+

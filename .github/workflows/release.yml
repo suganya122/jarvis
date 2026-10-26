@@ -1,0 +1,101 @@
+name: Release
+
+# Push a version tag (v0.1.0) to build, test-install, sign and publish a GitHub Release.
+# Free everywhere: public-repo runners, no paid code-signing certificates. SHA256SUMS is
+# signed keylessly with sigstore (cosign + GitHub's OIDC identity), so there is no key
+# to leak or rotate. See docs/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the wheel and this OS's offline bundle
+        run: python packaging/build.py
+      - name: Smoke test - install the bundle, start it, uninstall it (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+        run: |
+          mkdir -p smoke && cd smoke && unzip -q ../dist/*-"$(uname | tr A-Z a-z | sed s/darwin/macos/)"-*.zip
+          sh */install.sh
+          ~/.local/bin/local-assistant --port 8799 --fake-model & sleep 1
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8799/api/health && break; sleep 0.5; done
+          curl -sf -H "Host: 127.0.0.1:8799" http://127.0.0.1:8799/ | grep -q "<html"
+          sh ~/.local/opt/local-assistant/uninstall.sh --yes --port 8799
+          test ! -e ~/.local/opt/local-assistant/venv
+      - name: Smoke test - install the bundle, start it, uninstall it (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+        run: |
+          New-Item -ItemType Directory smoke | Out-Null
+          Expand-Archive (Get-ChildItem dist\*-windows-*.zip).FullName -DestinationPath smoke
+          $bundle = (Get-ChildItem smoke -Directory)[0].FullName
+          powershell -ExecutionPolicy Bypass -File "$bundle\install.ps1"
+          $prefix = "$env:LOCALAPPDATA\Programs\local-assistant"
+          Start-Process "$prefix\venv\Scripts\local-assistant.exe" -ArgumentList "--port 8799 --fake-model"
+          $ok = $false
+          foreach ($i in 1..60) { try { Invoke-RestMethod http://127.0.0.1:8799/api/health | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 500 } }
+          if (-not $ok) { throw "daemon did not start" }
+          powershell -ExecutionPolicy Bypass -File "$prefix\uninstall.ps1" --yes --port 8799
+          if (Test-Path "$prefix\venv") { throw "uninstall left files behind" }
+      - name: Publish the (pure-Python) wheel from one runner only
+        if: runner.os != 'Linux'
+        shell: bash
+        run: rm dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.whl
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the draft release
+      id-token: write   # sigstore keyless signing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums (the one-line installers read these, and install requirements.txt's pins)
+        working-directory: dist
+        run: |
+          cp ../backend/requirements.txt .
+          sha256sum *.zip *.whl requirements.txt | tee SHA256SUMS
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign SHA256SUMS (keyless)
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: Publish the GitHub Release (install.sh / install.ps1 download from "latest")
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --latest --verify-tag --generate-notes dist/*

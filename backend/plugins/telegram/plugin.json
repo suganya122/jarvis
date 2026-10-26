@@ -1,0 +1,25 @@
+{
+  "name": "telegram",
+  "display_name": "Telegram",
+  "version": "0.1.0",
+  "description": "Chat with the assistant from Telegram through a bot you create (free, via @BotFather). Only accounts you pair can use it; anything that changes something asks you with Approve / Deny buttons.",
+  "contract_version": "1.0",
+  "provides": ["channel"],
+  "capabilities": ["net.fetch"],
+  "entrypoint": "telegram.main",
+  "options": [
+    {
+      "name": "api_base",
+      "label": "Bot API server",
+      "help": "Leave empty for Telegram's own server (https://api.telegram.org), or point it at a self-hosted Bot API server.",
+      "advanced": true
+    }
+  ],
+  "secrets": [
+    {
+      "name": "bot_token",
+      "label": "bot token",
+      "help": "In Telegram, message @BotFather, send /newbot, and paste the token it gives you."
+    }
+  ]
+}

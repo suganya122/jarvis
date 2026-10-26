@@ -1,0 +1,94 @@
+/* The voice home screen and the hands-free settings. */
+
+/* ---- hands-free ---- */
+
+.hands-free code.command {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius-small);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---- voice home ---- */
+
+.voice-home {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: 40px var(--space-3);
+}
+
+.voice-home > * {
+  flex-shrink: 0; /* scroll on small screens; never squash the orb to nothing */
+}
+
+.voice-home h2 {
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.home-orb {
+  width: 120px;
+  height: 120px;
+  margin: var(--space-4) 0 var(--space-2);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, var(--accent), var(--accent-soft) 70%);
+  animation: home-breathe 3.2s ease-in-out infinite;
+}
+
+.home-orb-listening {
+  animation-duration: 1.2s;
+}
+
+.home-orb-thinking,
+.home-orb-speaking {
+  animation-duration: 0.9s;
+}
+
+.home-orb-approval {
+  background: radial-gradient(circle at 50% 45%, var(--warn), var(--warn-bg) 70%);
+  animation: none;
+}
+
+.home-orb-off {
+  background: radial-gradient(circle at 50% 45%, var(--muted), var(--surface-2) 70%);
+  animation: none;
+}
+
+@keyframes home-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-orb {
+    animation: none;
+  }
+}
+
+.home-examples {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--text-2);
+  display: grid;
+  gap: 4px;
+}
+
+.home-recent ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}

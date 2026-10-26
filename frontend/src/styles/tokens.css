@@ -1,0 +1,97 @@
+/* Design tokens (Part 3 of the brief): near-black surfaces, thin borders, one mint accent,
+   amber for anything that needs the user, a muted red for deny/stop. Dark is the default;
+   light has the same structure. Contrast pairs are checked by src/styles/contrast.test.ts. */
+
+@font-face {
+  font-family: "DotGothic16";
+  src: url("/fonts/DotGothic16-latin.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --font-display: "DotGothic16", ui-monospace, monospace;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --radius: 6px;
+  --radius-small: 4px;
+
+  /* dark (default) */
+  --bg: #0b0b0c;
+  --surface: #141416;
+  --surface-2: #1c1c1f;
+  --border: #28282a;
+  --text: #ffffff;
+  --text-2: #c4c2c3;
+  --text-3: #b4b4b6;
+  --muted: #9a9a9c;
+  --accent: #6ee7b7;
+  --accent-text: #0b0b0c;
+  --accent-soft: #10231b;
+  --warn: #f5b25b;
+  --warn-bg: #221a0e;
+  --warn-text: #f5b25b;
+  --danger: #ef7d74;
+  --danger-text: #0b0b0c;
+  --user-bubble: #16201b;
+  --focus: #6ee7b7;
+  color-scheme: dark;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f6f7;
+    --surface: #ffffff;
+    --surface-2: #f0f0f2;
+    --border: #dcdce0;
+    --text: #0b0b0c;
+    --text-2: #34343a;
+    --text-3: #46464c;
+    --muted: #5f5f66;
+    --accent: #047857;
+    --accent-text: #ffffff;
+    --accent-soft: #e3f5ec;
+    --warn: #8a5200;
+    --warn-bg: #fff3df;
+    --warn-text: #7a4800;
+    --danger: #b42318;
+    --danger-text: #ffffff;
+    --user-bubble: #e6f4ed;
+    --focus: #047857;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #f0f0f2;
+  --border: #dcdce0;
+  --text: #0b0b0c;
+  --text-2: #34343a;
+  --text-3: #46464c;
+  --muted: #5f5f66;
+  --accent: #047857;
+  --accent-text: #ffffff;
+  --accent-soft: #e3f5ec;
+  --warn: #8a5200;
+  --warn-bg: #fff3df;
+  --warn-text: #7a4800;
+  --danger: #b42318;
+  --danger-text: #ffffff;
+  --user-bubble: #e6f4ed;
+  --focus: #047857;
+  color-scheme: light;
+}

@@ -1,0 +1,7 @@
+{
+  "uuid": "windows@local-assistant",
+  "name": "Assistant window placement",
+  "description": "Lets the local assistant list, move and resize your windows when you ask it to (Wayland apps can't do that themselves). Nothing leaves this computer.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "url": "https://github.com/suganya122/jarvis"
+}
