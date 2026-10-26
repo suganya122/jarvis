@@ -32,7 +32,7 @@ SCRIPTS = Path(__file__).resolve().parent / "scripts"
 
 def run(*cmd: str, cwd: Path = ROOT) -> None:
     print("+", " ".join(cmd), flush=True)
-    subprocess.run(
+    subprocess.run(  # noqa: S603 - our own build commands
         cmd, cwd=cwd, check=True, shell=sys.platform == "win32" and cmd[0] == "npm"
     )
 
