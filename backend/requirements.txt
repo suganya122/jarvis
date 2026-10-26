@@ -46,7 +46,7 @@ tqdm==4.70.1
 truststore==0.10.5
 typing-inspection==0.4.4
 typing_extensions==4.16.0
-tzdata==2026.4 ; sys_platform == "win32"  # Windows has no time zone database
+tzdata==2026.5 ; sys_platform == "win32"  # Windows has no time zone database
 urllib3==2.8.0
 uvicorn==0.54.0
 uvloop==0.23.0 ; sys_platform != "win32"
