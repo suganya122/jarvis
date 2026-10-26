@@ -61,6 +61,7 @@ def worker_env() -> dict[str, str]:
     }
     env["PYTHONPATH"] = str(BACKEND_ROOT)
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONUTF8"] = "1"  # pipes in UTF-8 everywhere (Windows would use cp1252 and garble "…")
     return env
 
 

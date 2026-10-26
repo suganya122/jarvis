@@ -4,6 +4,8 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: vosk  # pinned per OS: 0.3.45 has no macOS build (see requirements.txt)
   - package-ecosystem: npm
     directory: /frontend
     schedule:

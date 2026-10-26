@@ -120,6 +120,7 @@ async def test_capture_error_becomes_a_clear_result() -> None:
     assert not result.ok and "aren't allowed" in result.output
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the screenshot portal is Linux only")
 def test_portal_file_is_deleted_after_reading(tmp_path: Path) -> None:
     shot = tmp_path / "Screenshot.png"
     Image.new("RGB", (10, 10), "red").save(shot)

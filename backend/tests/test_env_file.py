@@ -17,7 +17,8 @@ from models.anthropic_provider import _error_text
 def test_template_is_private_and_never_overwrites(tmp_path: Path) -> None:
     path = tmp_path / ".env"
     env_file.create_template(path)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":  # Windows has no permission bits; the profile folder is private
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert env_file.load(path) == {}  # the empty key line isn't a key
     path.write_text("ANTHROPIC_API_KEY=sk-ant-real\n")
     with pytest.raises(FileExistsError):

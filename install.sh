@@ -172,7 +172,7 @@ fi
 LAUNCH="$BIN_DIR/jarvis"
 if [ "$OS" = mac ]; then
   APP="$HOME/Applications/$NAME.app"
-  say "Building $APP…"
+  say "Building ${APP}…"
   mkdir -p "$APP/Contents/MacOS" "$TMP/swift"
   cat > "$TMP/swift/main.swift" <<EOF
 // Starts the assistant as a child process, so macOS attributes the microphone and
