@@ -53,6 +53,7 @@ jobs:
             <key>NSSpeechRecognitionUsageDescription</key><string>Jarvis turns speech into text on this Mac.</string>
           </dict></plist>
           PLIST
+          set -o pipefail  # a compile error must fail this step, not hide behind tee
           swiftc -O backend/core/macos/*.swift -o "$APP/Contents/MacOS/Jarvis" 2>&1 | tee "$OUT/swiftc.txt"
           codesign --force --sign - "$APP"
           "$APP/Contents/MacOS/Jarvis" --version | tee "$OUT/app-version.txt"

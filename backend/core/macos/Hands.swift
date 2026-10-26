@@ -30,7 +30,10 @@ final class HandsServer {
             }
             DispatchQueue.main.async { exit(0) }  // input closed: done, after answering what's queued
         }
-        RunLoop.main.run()  // keeps NSWorkspace's list of running apps current
+        // A run loop with nothing registered returns at once, which would end the helper before it
+        // answered anything: the timer keeps it running (and NSWorkspace's app list current).
+        Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in }
+        RunLoop.main.run()
         exit(0)
     }
 

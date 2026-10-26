@@ -123,7 +123,7 @@ final class AudioServer {
 
     private func say(_ id: String, _ text: String) {
         stop(reason: "interrupted")
-        current, pending, allQueued = id, 0, false
+        (current, pending, allQueued) = (id, 0, false)
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.bestVoice()
         synthesizer.write(utterance) { buffer in
@@ -136,7 +136,7 @@ final class AudioServer {
     private func play(_ id: String, _ pcm: Data, rate: Double, last: Bool) {
         if current != id {
             stop(reason: "interrupted")
-            current, pending, allQueued = id, 0, false
+            (current, pending, allQueued) = (id, 0, false)
         }
         let samples = pcm.count / 2
         if samples > 0, let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1,
