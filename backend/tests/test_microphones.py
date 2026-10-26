@@ -85,3 +85,14 @@ def test_speech_heard_first_is_not_taken_for_the_room() -> None:
     for _ in range(10):  # the mic opens while someone is talking
         floor.update(0.8)
     assert floor.sound() < 0.8
+
+
+def test_a_bluetooth_headset_mic_is_the_last_choice(monkeypatch: pytest.MonkeyPatch) -> None:
+    airpods = Microphone(id="airpods", name="Srinith's AirPods Pro")
+    builtin = Microphone(id="builtin", name="MacBook Pro Microphone")
+    monkeypatch.setattr(devices, "probe", _probe({"airpods": "ok", "builtin": "ok"}))
+    # Even when the headset is the system default, the built-in mic is used (no "call mode").
+    mic, why = devices.choose("", lambda _b: 0.0, ([airpods, builtin], "airpods"))
+    assert mic == builtin and "call mode" in why
+    # Chosen in Settings: respected.
+    assert devices.choose("airpods", lambda _b: 0.0, ([airpods, builtin], "airpods"))[0] == airpods

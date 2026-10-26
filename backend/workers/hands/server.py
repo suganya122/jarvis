@@ -5,8 +5,8 @@ from typing import Any, TextIO
 from contracts.capture import CaptureError
 from workers.common.base import WorkerTool
 from workers.common.server import Server
-from workers.hands.atspi import AtspiError
 from workers.hands.context import ActiveContextTool
+from workers.hands.errors import AtspiError
 from workers.hands.fake import FakeError
 from workers.hands.keys import KeyError_
 from workers.hands.locate import LocateError

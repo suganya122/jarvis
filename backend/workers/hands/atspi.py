@@ -31,8 +31,7 @@ STATE_NAMES = {
 ACTIVE, FOCUSED, ICONIFIED, SHOWING, VISIBLE = 1, 12, 15, 25, 30
 
 
-class AtspiError(Exception):
-    pass
+from workers.hands.errors import AtspiError as AtspiError  # noqa: E402 - re-exported for linux.py
 
 
 def a11y_bus_address(session_address: str | None = None) -> str:

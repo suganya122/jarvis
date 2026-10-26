@@ -10,6 +10,7 @@ Linux (PipeWire): inputs are PipeWire sources, opened through PipeWire's ALSA de
 
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -72,6 +73,13 @@ def _pipewire_sources() -> tuple[list[Microphone], str]:
     return mics, default
 
 
+BLUETOOTH = re.compile(r"airpods|bluetooth|bluez|headset|buds|beats|hands-free|handsfree", re.IGNORECASE)
+
+
+def is_bluetooth(mic: Microphone) -> bool:
+    return bool(BLUETOOTH.search(mic.name) or BLUETOOTH.search(mic.id))
+
+
 def open_args(mic_id: str) -> dict[str, Any]:
     """sounddevice arguments for this microphone ("" = the system default)."""
     if pipewire():
@@ -125,13 +133,17 @@ def choose(
         if preferred in by_id:
             return by_id[preferred], "chosen in Settings"
         return None, "the microphone chosen in Settings isn't connected; using the default"
-    ordered = sorted(mics, key=lambda m: m.id != default)  # the default first
+    # The default first, Bluetooth headsets last: opening their microphone switches the headphones
+    # into low-quality "call mode" (your music would suddenly sound like a phone call).
+    ordered = sorted(mics, key=lambda m: (is_bluetooth(m), m.id != default))
     verdicts: list[str] = []
     for mic in ordered:
         verdict = probe(mic.id, level_of)
         if verdict == "ok":
             if mic.id == default or not default:
                 return mic, "the system default"
+            if not verdicts and default in by_id and is_bluetooth(by_id[default]):
+                verdicts.append(f"not {by_id[default].name}: a Bluetooth mic puts headphones in call mode")
             skipped = "; ".join(verdicts) or "the default input didn't work"
             return mic, f"chosen automatically ({skipped})"
         verdicts.append(f"{by_id[mic.id].name} is only {verdict}")

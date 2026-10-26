@@ -38,7 +38,11 @@ class Speculation:
         return (
             not self.used
             and self.text == normalize(text)
-            and self.session_id == session_id
+            and (
+                self.session_id == session_id
+                # started before the chat was saved: the same empty conversation either way
+                or (self.session_id is None and self.history_len == 0)
+            )
             and self.history_len == history_len
             and self.tier == tier
             and now - self.started < MAX_AGE_S

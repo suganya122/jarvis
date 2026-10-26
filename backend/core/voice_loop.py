@@ -21,6 +21,7 @@ from core.ears_host import EarsHost
 from core.hands_free import HandsFree
 from core.hands_free_types import HandsFreeDeps
 from core.overlay import OverlayController
+from core.speculation import Speculation
 from core.store import Store
 from core.worker_host import WorkerHost, WorkerUnavailable
 
@@ -105,6 +106,8 @@ class VoiceLoop:
                 run_turn=self._run_turn,
                 resolve_approval=lambda approval_id, ok: approvals.resolve(approval_id, ok, remember=False),
                 on_wake=self._on_wake,
+                speculate=self._speculate,
+                discard=self._discard,
             )
         )
 
@@ -171,7 +174,16 @@ class VoiceLoop:
             self._mic_setting = wanted
             await self.loop.reopen_mic()
 
-    async def _run_turn(self, text: str, session_id: str | None, emit: Emit) -> str:
+    async def _speculate(self, text: str, session_id: str | None) -> object | None:
+        return await self._chat.speculate(session_id, text, None)
+
+    async def _discard(self, spec: object) -> None:
+        if isinstance(spec, Speculation):
+            await self._chat.discard(spec)
+
+    async def _run_turn(
+        self, text: str, session_id: str | None, emit: Emit, speculation: object | None
+    ) -> str:
         session = await self._store.ensure_session(session_id, text)
         active, text = await self._for_voice(text)  # what's on screen; "no, the other one" retargets
         request_id = uuid.uuid4().hex
@@ -180,5 +192,6 @@ class VoiceLoop:
             await self._overlay.set_target(active.label())
         await self._store.audit("user", "voice.hands_free", {"chars": len(text)})
         send = ChatSend(request_id=request_id, session_id=session, text=text)
-        await self._chat.run(send, emit, None, active=active)
+        early = speculation if isinstance(speculation, Speculation) else None
+        await self._chat.run(send, emit, early, active=active)  # uses the early start if the words match
         return session

@@ -114,14 +114,13 @@ def daemon(tmp_path: Path) -> Iterator[Daemon]:
 
 
 def test_a_spoken_conversation_end_to_end(daemon: Daemon) -> None:
-    assert daemon.state() == "off"  # no speech model chosen yet: the microphone stays closed
+    # First start: a spoken hello (and the box), so you know it's there
+    daemon.wait("the hello", lambda: daemon.spoken()[:1] == ["Jarvis is ready."])
+    daemon.wait("off", lambda: daemon.state() == "off")  # no speech model chosen yet: the mic stays closed
     assert MODEL is not None
     settings = daemon.api("GET", "/api/settings")
     settings["voice"]["stt_model"] = MODEL[0]  # type: ignore[index]
     daemon.api("PUT", "/api/settings", settings)
-
-    # First start: a spoken hello (and the box), so you know it's there
-    daemon.wait("the hello", lambda: daemon.spoken()[:1] == ["Jarvis is ready."])
 
     # "Jarvis, what time is it?" -> the time, spoken (an instant command: no AI call)
     daemon.wait("the spoken time", lambda: any(line.startswith("It's ") for line in daemon.spoken()))

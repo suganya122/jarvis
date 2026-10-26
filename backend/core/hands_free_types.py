@@ -27,6 +27,8 @@ PREROLL_FRAMES = 5
 QUIET_FOR_S = 0.8
 SPEAK_TAIL_S = 0.5
 SESSION_TTL_S = 600.0
+SPECULATE_PAUSE_S = 0.7
+"""A pause this long, mid-request, starts the model early (see HandsFreeDeps.speculate)."""
 FINAL_WAIT_S = 3.0
 APPROVAL_LISTEN_S = 10.0
 APPROVAL_SILENCE_S = 1.2
@@ -81,10 +83,13 @@ class HandsFreeDeps:
     settings: Callable[[], VoiceSettings]
     paused: Callable[[], bool]
     stt_ready: Callable[[], bool]
-    run_turn: Callable[[str, str | None, Emit], Coroutine[Any, Any, str]]
-    """(text, session id or None, emit) -> the session id used. Runs one chat turn."""
+    run_turn: Callable[[str, str | None, Emit, object | None], Coroutine[Any, Any, str]]
+    """(text, session id or None, emit, speculation) -> the session id used. Runs one chat turn."""
     resolve_approval: Callable[[str, bool], bool]
     on_wake: Callable[[], None] = lambda: None
+    speculate: Callable[[str, str | None], Coroutine[Any, Any, object | None]] | None = None
+    """Start the model on what was said so far, during a pause (its tools wait for the final words)."""
+    discard: Callable[[object], Awaitable[None]] | None = None
     clock: Callable[[], float] = time.monotonic
 
 

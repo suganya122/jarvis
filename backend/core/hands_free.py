@@ -35,6 +35,7 @@ from core.hands_free_types import (
     QUIET_FOR_S,
     ROTATE_S,
     SPEAK_TAIL_S,
+    SPECULATE_PAUSE_S,
     STALLED_EXTRA_S,
     TICK_S,
     HandsFreeDeps,
@@ -66,6 +67,8 @@ class HandsFree(TurnsMixin):
         self.floor = NoiseFloor()
         self._speak_lock = asyncio.Lock()
         self._offline = False
+        self._spec: asyncio.Task[object | None] | None = None
+        self._spec_text = ""
         self._tasks: set[asyncio.Future[None]] = set()
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -91,41 +94,6 @@ class HandsFree(TurnsMixin):
     def on_transcript(self, event: TranscriptEvent) -> None:
         if event.stream_id == self._stream:
             self._inbox.put_nowait(("stt", event))
-
-    async def reopen_mic(self) -> None:
-        """Close and reopen the microphone (a different one was chosen)."""
-        if self._mic_on:
-            await self._d.ears.listen(False)
-            await self._d.ears.listen(True)
-
-    def go_offline(self) -> None:
-        """End a live session (the menu's "Go offline"): back to waiting for "Hey Jarvis"."""
-        self._offline = True
-        self._inbox.put_nowait(("offline", None))
-
-    def finish_now(self) -> None:
-        """The talk key was let go: what was said so far is the request, no silence wait."""
-        self._inbox.put_nowait(("finish", None))
-
-    def wake_now(self) -> None:
-        """The voice shortcut: start a conversation as if the wake word had been said."""
-        self._woken = True
-        self._inbox.put_nowait(("wake", None))
-
-    async def say_now(self, text: str) -> bool:
-        """Speak something outside a conversation (Read aloud). Ignored while it's mid-sentence."""
-        if self._speaking:
-            return False
-        await self._say(text)
-        return True
-
-    def interrupt(self) -> None:
-        """Stop speaking and cancel the running request (the Stop button, the stop shortcut)."""
-        if self._turn_task is not None:
-            self._turn_task.cancel()
-        task = asyncio.ensure_future(self._d.ears.stop_saying())
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
 
     def _set(self, state: HandsFreeState, detail: str) -> None:
         if (state, detail) != (self.state, self.detail) and state in ("off", "idle") and state != self.state:
@@ -180,7 +148,9 @@ class HandsFree(TurnsMixin):
             self._mic_on = False
 
     async def _cycle(self) -> None:
-        heard = await self._hear(wake=True, first_word_s=None, silence_s=self._d.settings().silence_s)
+        heard = await self._hear(
+            wake=True, first_word_s=None, silence_s=self._d.settings().silence_s, speculate=True
+        )
         if self._woken:  # the shortcut: no wake word needed
             self._woken = False
             self._d.on_wake()
@@ -225,7 +195,7 @@ class HandsFree(TurnsMixin):
                 await self._say(END_ACK)
                 return
             elif not (live and is_filler(pending)):
-                reply = await self._turn(pending)
+                reply = await self._turn(pending, await self._take_speculation())
                 if reply:
                     await self._say(reply)
             if self._blocker() is not None or self._offline:
@@ -234,7 +204,7 @@ class HandsFree(TurnsMixin):
             await self._d.screen.voice_show("listening", status=status)
             self.state = "listening"
             follow_up = None if live else self._d.settings().follow_up_s
-            heard = await self._hear(wake=False, first_word_s=follow_up, silence_s=silence_s)
+            heard = await self._hear(wake=False, first_word_s=follow_up, silence_s=silence_s, speculate=True)
             if heard is None:
                 if live and not self._offline and self._blocker() is None:
                     pending = None
@@ -245,10 +215,13 @@ class HandsFree(TurnsMixin):
 
     # ---- hearing ------------------------------------------------------------------------
 
-    async def _hear(self, *, wake: bool, first_word_s: float | None, silence_s: float) -> str | None:
+    async def _hear(
+        self, *, wake: bool, first_word_s: float | None, silence_s: float, speculate: bool = False
+    ) -> str | None:
         """One utterance: from the first word until `silence_s` of quiet. With `wake`, anything
         that doesn't start with the wake word is dropped as soon as that's clear. None when
-        nothing (usable) was said."""
+        nothing (usable) was said. With `speculate`, a pause starts the model early."""
+        await self._drop_speculation()  # whatever wasn't used by the last request
         stream = f"hf-{uuid.uuid4().hex[:12]}"
         while not self._inbox.empty():
             self._inbox.get_nowait()
@@ -296,6 +269,8 @@ class HandsFree(TurnsMixin):
                             preroll.append(pcm_b64)
                     if level >= self.floor.sound():
                         last_sound = now
+                    elif speculate and text and now - last_sound >= SPECULATE_PAUSE_S:
+                        self._maybe_speculate(match_wake(text, self._wake_word())[1] if wake else text)
                     if addressed:
                         await self._d.screen.level(level)
                 elif kind == "stt":

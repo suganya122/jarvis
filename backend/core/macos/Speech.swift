@@ -94,6 +94,9 @@ final class SpeechServer {
         if #available(macOS 13, *) {
             stream.request.addsPunctuation = false
         }
+        // Words it should expect: the wake word and the phrases that steer a conversation.
+        stream.request.contextualStrings = ["Jarvis", "Hey Jarvis", "OK Jarvis", "go offline", "that's all",
+                                            "stop listening", "yes", "no"]
         streams[id] = stream
         stream.task = recognizer.recognitionTask(with: stream.request) { result, error in
             self.queue.async {

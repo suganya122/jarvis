@@ -205,3 +205,22 @@ async def test_hub_without_engine_explains(tmp_path: Path) -> None:
     sink = Sink()
     await rt.voice.start(sink, VoiceStart(stream_id="v1"))
     assert "speech model" in sink.of("voice.error")[0].message
+
+
+def test_an_early_start_before_the_chat_was_saved_still_counts() -> None:
+    """Hands-free: the model starts during a pause before the conversation has a saved chat;
+    the chat is created a moment later. Both are the same empty conversation."""
+    from contracts.model import ModelTier
+    from core.speculation import Speculation
+
+    early = Speculation(
+        text="what time is it", session_id=None, history_len=0, tier=ModelTier.CHEAP, started=0.0
+    )
+    assert early.matches("What time is it?", "new-session", 0, ModelTier.CHEAP, now=1.0)
+    with_history = Speculation(
+        text="and tomorrow", session_id=None, history_len=2, tier=ModelTier.CHEAP, started=0.0
+    )
+    assert not with_history.matches(
+        "and tomorrow", "s1", 2, ModelTier.CHEAP, now=1.0
+    )  # a real chat must match
+    assert not early.matches("what time is it now", "new-session", 0, ModelTier.CHEAP, now=1.0)  # other words

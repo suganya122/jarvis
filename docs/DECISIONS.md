@@ -1280,3 +1280,46 @@ are recognised (`core.context.retarget`, no model call).
   Say "go offline" when you step away. Approvals still guard anything that changes, sends
   or pays.
 
+## D103. What we took from studying Atticus (ideas, not code), and what the Mac taught us
+
+You asked us to read Atticus (MIT) for understanding. A separate agent read it and reported
+in words; no code was copied.
+
+- **Adopted, in our own implementation:**
+  - **Start during the pause:** after 0.7 s of quiet mid-request, the model starts on the
+    words so far (wake word stripped). Its tool calls only run if the final words match;
+    otherwise the head start is discarded and its cost recorded. Fillers, goodbyes and
+    approval answers never start it. It follows the existing "start thinking while I pause"
+    setting.
+  - **Context at the wake word, not at the end:** this was already in place since M12.
+  - **Hint words for Apple's recogniser:** "Jarvis", "Hey Jarvis", "go offline" and the like,
+    via `contextualStrings`.
+  - **The nicest installed English voice** for `say`: Premium, then Enhanced, preferring this
+    Mac's region.
+  - **No Bluetooth headset mic by default:** opening it switches the headphones into
+    low-quality call mode.
+  - **A non-activating, borderless panel** for the box and chips. The overlay process is a
+    background accessory: no Dock icon and no "Python" menu, set through the Objective-C
+    runtime with ctypes.
+- **Already ours, or better:**
+  - Replies are spoken sentence by sentence as they stream (Atticus speaks the whole answer
+    at the end).
+  - The talk key's release sends at once.
+  - Haiku first, escalating on multi-step work or failure.
+  - Skills replay learned tasks with no AI.
+  - Safety is enforced outside the model.
+- **Not adopted, because it's fragile:**
+  - private SkyLight calls for background input;
+  - an undocumented preference to read the voice;
+  - browser control through "Allow JavaScript from Apple Events";
+  - temp-file handshakes.
+- **The macOS live test on a real (GitHub) Mac found and fixed:**
+  - title bars on the box;
+  - a "Python" Dock icon and menu;
+  - grey native buttons;
+  - a crash going from a finished box to an approval card (on every OS);
+  - the screen-control worker dying on macOS because it imported a Linux-only library.
+
+  It also confirmed that window arrangement works on macOS (verified), and that Jarvis.app
+  runs and reaches the speech permission step.
+

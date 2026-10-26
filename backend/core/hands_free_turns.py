@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+from typing import Any
 
 from contracts.ws import (
     ApprovalRequested,
@@ -20,7 +21,14 @@ from core.hands_free_types import (
     HandsFreeDeps,
     HandsFreeState,
 )
-from core.speech_text import MAX_SPOKEN_CHARS, SentenceSplitter, yes_no
+from core.speech_text import (
+    MAX_SPOKEN_CHARS,
+    SentenceSplitter,
+    is_end_phrase,
+    is_filler,
+    is_go_offline,
+    yes_no,
+)
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +39,14 @@ class TurnsMixin:
     _session: str | None
     _session_at: float
     _turn_task: "asyncio.Task[str] | None"
+    _spec: "asyncio.Task[object | None] | None"
+    _spec_text: str
+    _tasks: "set[asyncio.Future[None]]"
+    _inbox: "asyncio.Queue[tuple[str, Any]]"
+    _mic_on: bool
+    _offline: bool
+    _woken: bool
+    _speaking: bool
 
     async def _say(self, text: str) -> None:
         raise NotImplementedError
@@ -38,9 +54,84 @@ class TurnsMixin:
     async def _hear(self, *, wake: bool, first_word_s: float | None, silence_s: float) -> str | None:
         raise NotImplementedError
 
+    # ---- controls (menu bar, talk key, Stop, Read aloud) ------------------------------
+
+    async def reopen_mic(self) -> None:
+        """Close and reopen the microphone (a different one was chosen)."""
+        if self._mic_on:
+            await self._d.ears.listen(False)
+            await self._d.ears.listen(True)
+
+    def go_offline(self) -> None:
+        """End a live session (the menu's "Go offline"): back to waiting for "Hey Jarvis"."""
+        self._offline = True
+        self._inbox.put_nowait(("offline", None))
+
+    def finish_now(self) -> None:
+        """The talk key was let go: what was said so far is the request, no silence wait."""
+        self._inbox.put_nowait(("finish", None))
+
+    def wake_now(self) -> None:
+        """The voice shortcut: start a conversation as if the wake word had been said."""
+        self._woken = True
+        self._inbox.put_nowait(("wake", None))
+
+    async def say_now(self, text: str) -> bool:
+        """Speak something outside a conversation (Read aloud). Ignored while it's mid-sentence."""
+        if self._speaking:
+            return False
+        await self._say(text)
+        return True
+
+    def interrupt(self) -> None:
+        """Stop speaking and cancel the running request (the Stop button, the stop shortcut)."""
+        if self._turn_task is not None:
+            self._turn_task.cancel()
+        task = asyncio.ensure_future(self._d.ears.stop_saying())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    # ---- starting early, during a pause ------------------------------------------------
+
+    def _maybe_speculate(self, command: str) -> None:
+        """A pause mid-request: start the model on the words so far. Nothing it asks to do runs
+        until the final words confirm them; if the words change, it's thrown away."""
+        if self._d.speculate is None or not command or command == self._spec_text:
+            return
+        if is_filler(command) or is_end_phrase(command) or is_go_offline(command):
+            return
+        previous, self._spec_text = self._spec, command
+        self._spec = asyncio.create_task(self._d.speculate(command, self._live_session()))
+        if previous is not None:
+            self._spawn_discard(previous)
+
+    def _spawn_discard(self, task: "asyncio.Task[object | None]") -> None:
+        async def drop() -> None:
+            spec = await task
+            if spec is not None and self._d.discard is not None:
+                await self._d.discard(spec)
+
+        future = asyncio.ensure_future(drop())
+        self._tasks.add(future)
+        future.add_done_callback(self._tasks.discard)
+
+    async def _take_speculation(self) -> object | None:
+        task, self._spec, self._spec_text = self._spec, None, ""
+        return await task if task is not None else None
+
+    async def _drop_speculation(self) -> None:
+        task, self._spec, self._spec_text = self._spec, None, ""
+        if task is not None:
+            self._spawn_discard(task)
+
+    def _live_session(self) -> str | None:
+        if self._session and self._d.clock() - self._session_at > SESSION_TTL_S:
+            return None
+        return self._session
+
     # ---- one request --------------------------------------------------------------------
 
-    async def _turn(self, text: str) -> str | None:
+    async def _turn(self, text: str, speculation: object | None = None) -> str | None:
         """Run one request, speaking the reply sentence by sentence as it streams in (the first
         sentence is heard while the rest is still being written). Returns only what is left to
         say: a problem, or nothing."""
@@ -82,7 +173,7 @@ class TurnsMixin:
 
         if self._session and self._d.clock() - self._session_at > SESSION_TTL_S:
             self._session = None
-        self._turn_task = asyncio.create_task(self._d.run_turn(text, self._session, emit))
+        self._turn_task = asyncio.create_task(self._d.run_turn(text, self._session, emit, speculation))
         try:
             self._session = await self._turn_task
             self._session_at = self._d.clock()

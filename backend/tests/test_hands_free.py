@@ -108,6 +108,9 @@ class Rig:
         self.turns: list[tuple[str, str | None]] = []
         self.resolved: list[tuple[str, bool]] = []
         self.reply = "It is noon."
+        self.speculated: list[str] = []
+        self.discarded: list[object] = []
+        self.used_speculation: list[object | None] = []
         self.turn_script: Callable[[Callable[[ServerMessage], Awaitable[None]]], Awaitable[None]] | None = (
             None
         )
@@ -122,15 +125,22 @@ class Rig:
                 stt_ready=lambda: self.model_ready,
                 run_turn=self._turn,
                 resolve_approval=lambda i, ok: self.resolved.append((i, ok)) or True,
+                speculate=self._speculate,
+                discard=self._discard,
             )
         )
         self.rec.hf = self.hf
         self._pump: asyncio.Task[None] | None = None
 
     async def _turn(
-        self, text: str, session: str | None, emit: Callable[[ServerMessage], Awaitable[None]]
+        self,
+        text: str,
+        session: str | None,
+        emit: Callable[[ServerMessage], Awaitable[None]],
+        speculation: object | None = None,
     ) -> str:
         self.turns.append((text, session))
+        self.used_speculation.append(speculation)
         if self.turn_script is not None:
             await self.turn_script(emit)
         else:
@@ -138,6 +148,13 @@ class Rig:
         await emit(ChatDone(request_id="r", model="m", stop_reason="end_turn", usage=Usage(), cost_usd=0,
                             latency_ms=1, first_token_ms=1, route="model", timings={}))  # fmt: skip
         return "session-1"
+
+    async def _speculate(self, text: str, session: str | None) -> object | None:
+        self.speculated.append(text)
+        return f"spec:{text}"
+
+    async def _discard(self, spec: object) -> None:
+        self.discarded.append(spec)
 
     @contextlib.asynccontextmanager
     async def running(self) -> AsyncIterator["Rig"]:
@@ -489,5 +506,19 @@ def test_the_menus_go_offline_ends_a_live_session(monkeypatch: pytest.MonkeyPatc
             await rig.until(lambda: rig.hf.state == "listening")
             rig.hf.go_offline()
             await rig.until(lambda: rig.hf.state == "idle")
+
+    asyncio.run(run())
+
+
+def test_a_pause_starts_the_model_early_and_the_request_uses_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        monkeypatch.setattr(hands_free, "SPECULATE_PAUSE_S", 0.05)
+        async with rig.running():
+            await rig.speak("hey jarvis what time is it")
+            await rig.until(lambda: len(rig.turns) == 1)
+            assert rig.speculated == ["what time is it"]  # the wake word isn't part of the request
+            assert rig.used_speculation == ["spec:what time is it"]  # the head start was used
+            assert rig.discarded == []
 
     asyncio.run(run())
