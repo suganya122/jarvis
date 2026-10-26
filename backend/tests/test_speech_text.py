@@ -3,7 +3,16 @@ approvals (a muddled answer must never approve), and what's worth saying aloud."
 
 import pytest
 
-from core.speech_text import could_be_wake, is_barge_in, is_end_phrase, is_hold, match_wake, speakable, yes_no
+from core.speech_text import (
+    could_be_wake,
+    is_barge_in,
+    is_end_phrase,
+    is_hold,
+    match_wake,
+    speakable,
+    without_echo,
+    yes_no,
+)
 
 
 @pytest.mark.parametrize(
@@ -207,3 +216,36 @@ def test_cut_in_is_told_apart_from_its_own_voice(heard: str, saying: str, cut_in
 def test_hold_phrases_are_not_requests() -> None:
     assert is_hold("wait") and is_hold("ok hold on a second") and is_hold("stop")
     assert not is_hold("wait what time is it") and not is_hold("")
+
+
+FLIGHTS = (
+    "Google Flights shows plenty of nonstop Bengaluru to Chennai flights. The cheapest round trip "
+    "is about 7,762 rupees, for a departure on Thursday, October 29."
+)
+
+
+@pytest.mark.parametrize(
+    ("heard", "cut_in"),
+    [
+        # its own reply coming back, misheard in places: never a cut-in (it once took
+        # "departure on thursday 29th of" for a request)
+        ("google flights shows plenty of nonstop bangalore to chennai flights the cheapest round trip "
+         "is about 7762 rupees for a departure on thursday 29th of", False),
+        ("google flight show plenty of non stop bengal oru to chennai flight the cheapest "
+         "around trip", False),
+        ("google flights shows plenty of nonstop wait", True),
+        ("google flights shows plenty no i want one way only", True),
+        ("google flights shows plenty of nonstop bengaluru hey jarvis", True),
+    ],
+)  # fmt: skip
+def test_a_long_reply_coming_back_is_not_a_cut_in(heard: str, cut_in: bool) -> None:
+    assert is_barge_in(heard, FLIGHTS, "jarvis") is cut_in
+
+
+def test_the_request_after_a_cut_in_loses_only_its_own_last_words() -> None:
+    assert (
+        without_echo("for a departure on thursday flights to delhi please", FLIGHTS)
+        == "flights to delhi please"
+    )
+    assert without_echo("no wait the other screen", FLIGHTS) == "no wait the other screen"
+    assert without_echo("anything", "") == "anything"

@@ -6,9 +6,8 @@
 
 The microphone belongs to the ears process (workers/ears); speech-to-text to the voice worker.
 Everything the user says while idle is transcribed on this computer and thrown away unless it
-starts with the wake word. Replies are spoken; the microphone is ignored while it speaks (no
-echo cancellation outside a browser), so headphones or a pause are needed to interrupt: the
-overlay's Stop button and `core.cli stop` work any time.
+starts with the wake word. While it thinks and speaks a second listener (hands_free_barge) lets
+the person cut in; its own voice coming back is told apart by what it's saying.
 
 Approvals: ordinary changes can be answered "yes" / "no". Sends, purchases and anything
 influenced by outside content (web pages, files) need a click on the overlay card, so a
@@ -83,6 +82,7 @@ class HandsFree(TurnsMixin):
         self._barge = None
         self._saying = ""  # what this request's reply has said so far (its echo isn't a cut-in)
         self._lead_in: list[str] = []  # the sound of someone cutting in, for the next request
+        self._echo_of = ""  # what it was saying when cut off: kept out of that next request
         self._told = ""
 
     # ---- lifecycle and inputs -----------------------------------------------------
@@ -330,7 +330,7 @@ class HandsFree(TurnsMixin):
         finally:
             self._consuming = False
             await self._drop_stream(stream, abort=final is None)
-        return (final or text).strip() or None
+        return self._minus_echo((final or text).strip() or None)
 
     async def _wait_quiet(self) -> None:
         """Let the room go quiet (frames are read, nothing is transcribed)."""

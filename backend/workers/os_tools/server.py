@@ -1,5 +1,6 @@
 """Tool table for the os_tools worker."""
 
+import sys
 from typing import Any, TextIO
 
 from workers.common.base import WorkerTool
@@ -7,6 +8,7 @@ from workers.common.server import Server
 from workers.os_tools.app_tools import MediaControl, OpenApp
 from workers.os_tools.base import Env
 from workers.os_tools.fs_tools import ListDirectory, ReadTextFile, WriteTextFile
+from workers.os_tools.mac_automation import MacAutomation
 from workers.os_tools.notify_tools import DesktopNotify, FileInfo
 from workers.os_tools.open_tools import OpenPath, OpenUrl
 from workers.os_tools.paths import PathDenied
@@ -29,6 +31,7 @@ def all_tools() -> dict[str, WorkerTool[Any, Any]]:
         MediaControl(),
         FileInfo(),
         DesktopNotify(),
+        *([MacAutomation()] if sys.platform == "darwin" else []),
     ]
     return {t.name: t for t in tools}
 

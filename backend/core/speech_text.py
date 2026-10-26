@@ -199,20 +199,67 @@ def is_filler(text: str) -> bool:
     return not spoken or all(w in FILLERS for w in spoken)
 
 
-CUT_IN_WORDS = {"wait", "stop", "hold", "pause", "enough", "quiet", "cancel", "shut", "hang"}
+ECHO_SIMILARITY = 0.6
+ORDINAL = re.compile(r"^(\d+)(st|nd|rd|th)$")
+"""A heard word this close to one it said in the same place is its own voice, misheard."""
+CUT_IN_WORDS = {"no", "wait", "stop", "hold", "pause", "enough", "quiet", "cancel", "shut", "hang"}
 """Said over the reply, any one of these cuts it off, like it would a person."""
 HOLD_WORDS = CUT_IN_WORDS | {"on", "a", "second", "sec", "minute", "moment", "just", "please", "up", "no"}
 
 
+def _sounds_like(a: str, b: str) -> bool:
+    a, b = ORDINAL.sub(r"\1", a), ORDINAL.sub(r"\1", b)  # "29th" said as "29"
+    if a == b:
+        return True
+    return len(a) > 2 and len(b) > 2 and (a.rstrip("s") == b.rstrip("s") or _similar(a, b, ECHO_SIMILARITY))
+
+
+def their_words(heard: str, saying: str) -> list[str]:
+    """The words in `heard` that are the person's, not its own voice coming back.
+
+    What comes back through the microphone follows what it's saying, in order, sometimes misheard
+    ("29th" for "29", "bangalore" for "bengaluru"). So the two are lined up: a heard word counts as
+    echo when it matches, or sounds like, the word it said in that same place. Everything else is
+    someone else talking, including words heard where it hadn't got to yet."""
+    heard_words, own = words(heard), words(saying)
+    theirs: list[str] = []
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, heard_words, own, autojunk=False).get_opcodes():
+        if tag == "delete":  # heard, with nothing it said in that place
+            theirs += heard_words[i1:i2]
+        elif tag == "replace":
+            for k, w in enumerate(heard_words[i1:i2]):
+                near = own[max(j1, j1 + k - 1) : min(j2, j1 + k + 2)]  # the word said there, give or take one
+                if not any(_sounds_like(w, o) for o in near):
+                    theirs.append(w)
+    return theirs
+
+
 def is_barge_in(heard: str, saying: str, wake_word: str) -> bool:
-    """Is someone talking over the reply? Words that are only its own voice coming back through the
-    microphone (they're in what it's saying) don't count: a cut-in word, the name, or three
-    other words of their own do."""
-    own = set(words(saying))
-    theirs = [w for w in words(heard) if w not in own]
+    """Is someone talking over the reply? A cut-in word ("wait") or the name it didn't say itself,
+    or three words of their own; its own voice coming back, however misheard, doesn't count."""
+    theirs = their_words(heard, saying)
     if any(w in CUT_IN_WORDS or w == wake_word for w in theirs):
         return True
-    return len([w for w in theirs if w not in FILLERS]) >= 3
+    return len([w for w in theirs if len(w) > 2 and w not in FILLERS]) >= 3
+
+
+def without_echo(heard: str, saying: str) -> str:
+    """A request heard right after cutting in, minus its own last words that were still coming back
+    when they spoke: the leading stretch that follows what it said, in order. Their words stay, even ones
+    it also used ("the other screen")."""
+    rest, own = words(heard), words(saying)
+    run = max((_run(rest, own, start) for start in range(len(own))), default=0)
+    if run >= 2 or (run == 1 and any(_sounds_like(rest[0], o) for o in own[-3:])):
+        rest = rest[run:]  # one stretch only: the echo is what came just before they spoke
+    return " ".join(rest)
+
+
+def _run(heard: list[str], own: list[str], start: int) -> int:
+    """How many of `heard`'s first words follow `own` from `start`, one for one."""
+    n = 0
+    while n < len(heard) and start + n < len(own) and _sounds_like(heard[n], own[start + n]):
+        n += 1
+    return n
 
 
 def is_hold(text: str) -> bool:

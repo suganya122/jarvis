@@ -19,8 +19,8 @@ from core.speech_text import is_barge_in
 log = logging.getLogger(__name__)
 STREAM_PREFIX = "hf-cut-"
 """Starts like every hands-free stream ("hf-"), so its transcripts are routed back here."""
-LEAD_IN_FRAMES = 30
-"""The last three seconds of sound, handed to the next request when someone cuts in."""
+LEAD_IN_FRAMES = 20
+"""The last two seconds of sound, handed to the next request when someone cuts in."""
 ROTATE_FRAMES = 600
 """A fresh stream every minute: speech engines limit how long one can run."""
 

@@ -28,6 +28,7 @@ from core.speech_text import (
     is_end_phrase,
     is_filler,
     is_go_offline,
+    without_echo,
     yes_no,
 )
 
@@ -51,6 +52,7 @@ class TurnsMixin:
     _barge: BargeIn | None
     _saying: str
     _lead_in: list[str]
+    _echo_of: str
 
     async def _say(self, text: str) -> None:
         raise NotImplementedError
@@ -155,9 +157,16 @@ class TurnsMixin:
             watch.cancel()
             await asyncio.gather(watch, return_exceptions=True)
         if barge.cut_in:
-            self._lead_in = list(barge.frames)
+            self._lead_in, self._echo_of = list(barge.frames), self._saying
             return None
         return reply
+
+    def _minus_echo(self, heard: str | None) -> str | None:
+        """Right after a cut-in, the start of what's heard can be its own last words."""
+        echo, self._echo_of = self._echo_of, ""
+        if heard is None or not echo:
+            return heard
+        return without_echo(heard, echo) or None
 
     def _cut_in(self) -> bool:
         return self._barge is not None and self._barge.cut_in
