@@ -16,13 +16,7 @@ permissions:
 
 jobs:
   macos-live:
-    # Apple Silicon is what people have; Intel too, so a check still runs when GitHub's Apple
-    # Silicon machines are all busy (it has happened for hours at a time).
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-latest, macos-15-intel]
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     env:
       PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
       PYTHONPATH: ${{ github.workspace }}/backend
@@ -134,5 +128,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: macos-live-${{ matrix.runner }}
+          name: macos-live
           path: macos-live
