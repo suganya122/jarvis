@@ -6,8 +6,10 @@ Text is always given on stdin, never on a command line.
 """
 
 import contextlib
+import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,10 +27,45 @@ WINDOWS_SPEAK = (
 )
 
 
+_VOICE_LINE = re.compile(r"^(?P<name>.+?)\s+(?P<locale>[a-z]{2,3}_[A-Z0-9]{2,3})\s+#")
+QUALITY = ("(Premium)", "(Enhanced)")
+
+
+def best_mac_voice(listing: str, locale: str) -> str | None:
+    """The nicest English voice installed (`say -v ?`): Premium, then Enhanced, preferring this
+    Mac's own region (en_IN on an Indian Mac), then US, UK, others. None: the system's choice."""
+    voices = [
+        (m["name"].strip(), m["locale"]) for line in listing.splitlines() if (m := _VOICE_LINE.match(line))
+    ]
+    regions = [locale, "en_US", "en_GB", "en_AU", "en_IN", "en_IE", "en_ZA"]
+    for quality in QUALITY:
+        for region in regions:
+            for name, voice_locale in voices:
+                if voice_locale == region and voice_locale.startswith("en") and quality in name:
+                    return name
+    return None
+
+
+@functools.cache
+def _mac_voice() -> str | None:
+    try:
+        # macOS's own tools (/usr/bin): the installed voices and this Mac's region.
+        listing = subprocess.run(["/usr/bin/say", "-v", "?"], capture_output=True, text=True, timeout=5,
+                                 check=False).stdout  # fmt: skip
+        locale = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleLocale"], capture_output=True,
+                                text=True, timeout=5, check=False).stdout.strip().split("@")[0]  # fmt: skip
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return best_mac_voice(listing, locale)
+
+
 def system_voice_command() -> list[str] | None:
     """The OS's own text-to-speech program, reading text from stdin."""
     if sys.platform == "darwin":
-        return ["say"] if shutil.which("say") else None
+        if not shutil.which("say"):
+            return None
+        voice = _mac_voice()
+        return ["say", "-v", voice] if voice else ["say"]
     if sys.platform == "win32":
         return ["powershell", "-NoProfile", "-Command", WINDOWS_SPEAK]
     return ["spd-say", "-w", "-e"] if shutil.which("spd-say") else None

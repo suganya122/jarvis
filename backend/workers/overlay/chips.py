@@ -1,7 +1,6 @@
 """Background jobs as small chips in the top-right corner of the pointer's display, in their
 own always-on-top window that never takes focus. Click a finished chip to put it away."""
 
-import sys
 import tkinter as tk
 from collections.abc import Callable
 
@@ -21,12 +20,7 @@ class TaskChips:
         self._win = tk.Toplevel(root, bg=BG)
         self._win.withdraw()
         self._win.attributes("-topmost", True)
-        if sys.platform == "darwin":
-            self._win.tk.call(
-                "::tk::unsupported::MacWindowStyle", "style", str(self._win), "help", "noActivates"
-            )
-        else:
-            self._win.overrideredirect(True)
+        self._win.overrideredirect(True)  # a borderless panel (no title bar on macOS either)
         self._font, self._small = font, small
         self._monitor = monitor
         self._dismissed: set[str] = set()

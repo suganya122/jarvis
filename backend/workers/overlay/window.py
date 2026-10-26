@@ -16,6 +16,7 @@ from contracts import APP_NAME
 from contracts.overlay import FromOverlay, OverlayDecide, OverlayDismiss, OverlayStop, OverlayView
 
 from .chips import TaskChips
+from .macos import run_as_accessory
 from .orb import Orb, reduced_motion
 from .placement import Rect, monitor_at, monitors, place
 from .thread import ThreadView
@@ -60,12 +61,10 @@ class OverlayWindow:
         self.orb.canvas.pack(side="left")
         self.phase = tk.Label(header, text="", font=bold, bg=BG, fg=FG, anchor="w")
         self.phase.pack(side="left", padx=(6, 0))
-        self.close = tk.Button(header, text="✕", command=self._dismiss, bg=BG, fg=MUTED,
-                               activebackground=BUTTON, activeforeground=FG, relief="flat", bd=0, padx=6,
-                               takefocus=True, highlightthickness=2, highlightcolor=MINT,
-                               highlightbackground=BG)  # fmt: skip
+        self.close = self._button(header, "✕", self._dismiss)
+        self.close.configure(bg=BG, fg=MUTED, padx=6)
         self.close.pack(side="right")
-        body = tk.Frame(root, bg=BG)
+        body = self.body = tk.Frame(root, bg=BG)
         body.pack(fill="x", padx=16)
         # What "this"/"here" means, so the user can correct it ("no, the other one").
         self.target = tk.Label(
@@ -97,8 +96,14 @@ class OverlayWindow:
 
     def _button(
         self, parent: tk.Misc, text: str, command: Callable[[], None], primary: bool = False
-    ) -> tk.Button:
+    ) -> tk.Label | tk.Button:
         bg, fg, active = (MINT, INK, "#8af0c8") if primary else (BUTTON, FG, BUTTON_ACTIVE)
+        if sys.platform == "darwin":  # macOS draws native buttons grey whatever the colours: a label
+            label = tk.Label(parent, text=text, bg=bg, fg=fg, padx=10, pady=4, cursor="pointinghand")
+            label.bind("<Button-1>", lambda _e: command())
+            label.bind("<Enter>", lambda _e: label.configure(bg=active))
+            label.bind("<Leave>", lambda _e: label.configure(bg=bg))
+            return label
         button = tk.Button(parent, text=text, command=command, bg=bg, fg=fg, activebackground=active,
                            activeforeground=fg, relief="flat", padx=10, pady=4, takefocus=True, bd=0,
                            highlightthickness=2, highlightcolor=MINT, highlightbackground=BG)  # fmt: skip
@@ -108,15 +113,11 @@ class OverlayWindow:
     # ---- never steal focus --------------------------------------------------------
 
     def _no_focus_setup(self) -> None:
-        if sys.platform == "darwin":
-            # A utility ("help") window that doesn't activate the app when shown.
-            self.root.tk.call(
-                "::tk::unsupported::MacWindowStyle", "style", str(self.root), "help", "noActivates"
-            )
-        else:
-            # X11: not managed by the window manager, so it's never given focus or a taskbar
-            # entry. Windows: no title bar or taskbar button; WS_EX_NOACTIVATE is added on show.
-            self.root.overrideredirect(True)
+        # A borderless panel that's never given focus by the system. macOS: no title bar, and the
+        # process is a background accessory (no Dock icon, no menu bar). X11: not managed by the
+        # window manager. Windows: no taskbar button; WS_EX_NOACTIVATE is added on show.
+        self.root.overrideredirect(True)
+        run_as_accessory()
 
     def take_focus(self) -> None:
         """Only on a click (the user's choice). On X11 an override-redirect window gets no
@@ -164,7 +165,7 @@ class OverlayWindow:
         self.thread.render(view.items, view.partial, status)
         if view.approval:
             self.question.configure(text=f"Allow {view.approval.tool}? {view.approval.summary}")
-            self.approval.pack(fill="x", padx=16, pady=(8, 0), before=self.bottom)
+            self.approval.pack(fill="x", padx=16, pady=(8, 0), after=self.body)  # the footer may be hidden
         else:
             self.approval.pack_forget()
         self.hint.configure(text=hint(view))

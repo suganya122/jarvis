@@ -186,3 +186,24 @@ def test_test_hooks_always_reach_the_ears_process(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("ASSISTANT_EARS_SINK", "/tmp/spoken.txt")
     env = EarsHost(lambda _p, _l: None)._process._extra_env
     assert env["ASSISTANT_EARS_WAV"] == "/tmp/x.wav" and env["ASSISTANT_EARS_SINK"] == "/tmp/spoken.txt"
+
+
+SAY_LISTING = """Albert              en_US    # Hello! My name is Albert.
+Aman                en_IN    # Hello! My name is Aman.
+Ava (Premium)       en_US    # Hello! My name is Ava.
+Isha (Enhanced)     en_IN    # Hello! My name is Isha.
+Daniel (Enhanced)   en_GB    # Hello! My name is Daniel.
+Amélie (Premium)    fr_CA    # Bonjour! Je m'appelle Amélie.
+"""
+
+
+def test_the_nicest_english_mac_voice_is_chosen() -> None:
+    from workers.ears.speaker import best_mac_voice
+
+    assert best_mac_voice(SAY_LISTING, "en_IN") == "Ava (Premium)"  # Premium beats Enhanced
+    no_premium = "\n".join(line for line in SAY_LISTING.splitlines() if "Premium" not in line)
+    assert best_mac_voice(no_premium, "en_IN") == "Isha (Enhanced)"  # this Mac's region first
+    assert best_mac_voice(no_premium, "en_GB") == "Daniel (Enhanced)"
+    assert (
+        best_mac_voice("Albert   en_US    # Hello", "en_US") is None
+    )  # only basic voices: the system's choice
