@@ -8,7 +8,7 @@ sentence. Nothing is recorded or transcribed.
 import asyncio
 from pathlib import Path
 
-from core import voice_install
+from core import hardware, voice_install
 from core.ears_host import EarsHost
 from core.hands_free_types import GATE_LEVEL, QUIET_LEVEL
 
@@ -19,6 +19,9 @@ async def check(data_dir: Path, listen_s: float = LISTEN_S) -> int:
     levels: list[float] = []
     ears = EarsHost(lambda _pcm, level: levels.append(level))
     ears.piper, ears.voice = voice_install.installed_paths(data_dir)
+    hw = hardware.detect()
+    print(f"This computer: {hw.summary()}")
+    print(f"Speech runs with: {hw.speech()}")
     await ears.start()
     try:
         for _ in range(50):

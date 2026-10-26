@@ -1,0 +1,117 @@
+name: macOS live
+
+# The real Mac experience on a GitHub macOS runner: build Jarvis.app, the Mac voice, the
+# overlay box on a real Mac screen, window arrangement through System Events, a full spoken
+# conversation, and Jarvis.app running (menu bar + first-start box). Screenshots and logs are
+# uploaded as the "macos-live" artifact. Permission prompts (microphone, speech, Accessibility)
+# can't be answered on CI, so those steps report what happened instead of failing the run.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-live:
+    runs-on: macos-latest
+    env:
+      PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+      PYTHONPATH: ${{ github.workspace }}/backend
+      OUT: ${{ github.workspace }}/macos-live
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: python -m pip install -r backend/requirements-dev.txt
+      - run: mkdir -p "$OUT"
+
+      - name: This Mac (chip, GPU, and which speech engines that means)
+        working-directory: backend
+        run: python -c "from core import hardware; h = hardware.detect(); print(h.summary()); print(h.speech())" | tee "$OUT/hardware.txt"
+
+      - name: Build Jarvis.app from source
+        run: |
+          APP="$RUNNER_TEMP/Jarvis.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleIdentifier</key><string>local.assistant.jarvis</string>
+            <key>CFBundleName</key><string>Jarvis</string>
+            <key>CFBundleExecutable</key><string>Jarvis</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSUIElement</key><true/>
+            <key>JarvisPython</key><string>$(which python)</string>
+            <key>NSMicrophoneUsageDescription</key><string>Jarvis listens for its wake word.</string>
+            <key>NSSpeechRecognitionUsageDescription</key><string>Jarvis turns speech into text on this Mac.</string>
+          </dict></plist>
+          PLIST
+          swiftc -O backend/core/macos/*.swift -o "$APP/Contents/MacOS/Jarvis" 2>&1 | tee "$OUT/swiftc.txt"
+          codesign --force --sign - "$APP"
+          "$APP/Contents/MacOS/Jarvis" --version | tee "$OUT/app-version.txt"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: The Mac voice (say)
+        run: |
+          say -o "$OUT/jarvis-ready.aiff" "Jarvis is ready. It's Monday, 26 October."
+          ls -la "$OUT/jarvis-ready.aiff"
+          test -s "$OUT/jarvis-ready.aiff"
+          say -v '?' | head -20 > "$OUT/voices.txt"
+
+      - name: The overlay box on a real Mac screen (screenshots)
+        working-directory: backend
+        run: python tests/mac/overlay_states.py "$OUT"
+
+      - name: Window arrangement through System Events (needs Accessibility; reported, not fatal)
+        continue-on-error: true
+        working-directory: backend
+        run: python tests/mac/windows_check.py "$OUT" 2>&1 | tee "$OUT/windows.txt"
+
+      - name: Apple speech helper starts and reports (permission can't be granted on CI)
+        continue-on-error: true
+        run: (sleep 10; echo '{"type":"open","id":"t","rate":16000}') | timeout 20 "$APP/Contents/MacOS/Jarvis" --speech | tee "$OUT/speech-helper.txt" || true
+
+      - name: Cache the small speech model
+        uses: actions/cache@v4
+        with:
+          path: ~/test-models
+          key: vosk-small-en-us-0.15-30f26242
+      - name: Fetch the small speech model if not cached (checksum-verified)
+        run: |
+          if [ ! -d ~/test-models/vosk-model-small-en-us-0.15 ]; then
+            mkdir -p ~/test-models && cd ~/test-models
+            curl -sSL -o m.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+            echo "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498  m.zip" | shasum -a 256 -c -
+            unzip -q m.zip && rm m.zip
+          fi
+
+      - name: A full spoken conversation on macOS (test microphone, real speech engine, real daemon)
+        working-directory: backend
+        env:
+          ASSISTANT_TEST_STT_MODEL: /Users/runner/test-models/vosk-model-small-en-us-0.15
+        run: python -m pytest -q tests/test_hands_free_e2e.py tests/test_ears.py tests/test_hands_free.py 2>&1 | tee "$OUT/voice-tests.txt"
+
+      - name: Jarvis.app running (menu bar + first-start box)
+        continue-on-error: true
+        run: |
+          "$APP/Contents/MacOS/Jarvis" &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8765/api/health && break; sleep 1; done
+          sleep 8
+          screencapture -x "$OUT/app-running.png"
+          TOKEN=$(cat ~/Library/Application\ Support/local-assistant/auth_token)
+          curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/api/voice | python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['hands_free'], indent=2))" | tee "$OUT/app-status.txt"
+          pkill -f "Jarvis.app/Contents/MacOS/Jarvis" || true
+          cp ~/Library/Logs/Jarvis.log "$OUT/Jarvis.log" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-live
+          path: macos-live
