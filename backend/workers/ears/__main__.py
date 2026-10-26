@@ -26,6 +26,7 @@ from contracts.ears import (
     EarsSay,
     EarsStopSaying,
     FromEars,
+    Microphone,
     ToEars,
     to_ears_adapter,
 )
@@ -46,7 +47,8 @@ def main() -> None:
             sys.stdout.write(line + "\n")
             sys.stdout.flush()
 
-    writer = threading.Thread(target=write_all)
+    # daemon: if start-up fails, the process must exit (core restarts it), not live on deaf
+    writer = threading.Thread(target=write_all, daemon=True)
     writer.start()
 
     def on_pcm(pcm: bytes) -> None:
@@ -70,14 +72,20 @@ def main() -> None:
 
     speaker: Speaker | Any = Speaker(said)
     available, detail = (True, "test microphone") if wav else _probe()
+    audio = None
     if (helper := os.environ.get("ASSISTANT_MAC_AUDIO")) and not wav:
         audio = _mac_audio(helper, on_pcm, said)
         if audio is not None:  # one engine for both, with echo cancellation
             mic, speaker = audio.mic, audio.speaker
             available, detail = True, f"{audio.microphone} ({audio.detail})"
-            send(EarsMicChosen(microphone=audio.microphone, reason=audio.detail))
     mics = [] if wav else devices.list_microphones()[0]
     send(EarsReady(contract_version=CONTRACT_VERSION, available=available, detail=detail, microphones=mics))
+    if audio is not None:  # macOS picks the device for voice processing: report which
+        send(
+            EarsMicChosen(
+                microphone=Microphone(id=audio.microphone, name=audio.microphone), reason=audio.detail
+            )
+        )
 
     for raw in sys.stdin.buffer:
         try:
@@ -112,7 +120,7 @@ def _mac_audio(helper: str, on_pcm: Callable[[bytes], None], said: Callable[[Ear
 
     try:
         audio = MacAudio(helper, on_pcm, said, lambda d: print(f"ears: {d}", file=sys.stderr))
-    except OSError as exc:
+    except Exception as exc:  # whatever went wrong, the plain microphone still works
         print(f"ears: Jarvis.app's audio couldn't start ({exc}); using the plain microphone", file=sys.stderr)
         return None
     return audio if audio.alive else None

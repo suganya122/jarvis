@@ -80,3 +80,52 @@ def test_if_the_helper_is_gone_a_say_fails_at_once_instead_of_hanging(tmp_path: 
     audio.close()
     audio.speaker.say(EarsSay(say_id="c", text="Hello."))
     assert said and said[-1].say_id == "c" and not said[-1].ok
+
+
+def test_the_ears_process_starts_with_it_and_hears(tmp_path: Path) -> None:
+    """The whole ears process, not just the adapter: it once crashed at start-up reporting the
+    microphone, so the Mac heard nothing at all."""
+    import json
+    import os
+    import subprocess
+
+    helper = tmp_path / "Jarvis"
+    helper.write_text(FAKE_HELPER.format(python=sys.executable))
+    helper.chmod(helper.stat().st_mode | stat.S_IEXEC)
+    env = {**os.environ, "ASSISTANT_MAC_AUDIO": str(helper), "PYTHONPATH": str(Path(__file__).parents[1])}
+    env.pop("ASSISTANT_EARS_WAV", None)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "workers.ears"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        text=True,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+    proc.stdin.write(json.dumps({"type": "ears.listen", "on": True}) + "\n")
+    proc.stdin.flush()
+    import queue
+
+    lines: queue.Queue[str] = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(x) for x in proc.stdout], daemon=True).start()  # type: ignore[union-attr]
+    seen: list[str] = []
+    deadline = time.monotonic() + 10
+    while "ears.frame" not in seen and time.monotonic() < deadline:
+        try:
+            line = lines.get(timeout=0.5)
+        except queue.Empty:
+            if proc.poll() is not None:
+                break  # it exited (a start-up crash): fail below, don't hang
+            continue
+        message = json.loads(line)
+        seen.append(message["type"])
+        if message["type"] == "ears.mic_chosen":
+            assert message["microphone"]["name"] == "MacBook Air Microphone"
+    proc.stdin.close()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    assert seen[:2] == ["ears.ready", "ears.mic_chosen"], (seen, proc.stderr.read() if proc.stderr else "")
+    assert "ears.frame" in seen
