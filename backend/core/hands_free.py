@@ -254,7 +254,7 @@ class HandsFree(TurnsMixin):
                 if kind == "frame":
                     pcm_b64, level = data
                     self.floor.update(level)
-                    if (not wake or addressed) and text:
+                    if addressed:  # already talking to us: send every word, however quiet
                         await self._d.recognizer.feed(stream, pcm_b64)
                     else:  # nothing heard yet: only send sound, with a little lead-in
                         if level >= self.floor.gate():

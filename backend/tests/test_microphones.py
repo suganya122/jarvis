@@ -62,7 +62,7 @@ def test_when_nothing_sounds_right_it_falls_back_to_the_default(monkeypatch: pyt
 def test_quiet_is_relative_to_the_room() -> None:
     headset, webcam = NoiseFloor(), NoiseFloor()
     for _ in range(50):
-        headset.update(0.05)
+        headset.update(0.02)
         webcam.update(0.3)
     assert headset.sound() == QUIET_LEVEL  # never below the fixed minimum
     assert webcam.sound() == pytest.approx(0.42, abs=0.03)  # a webcam room's own hum isn't "speech"
@@ -73,6 +73,15 @@ def test_quiet_is_relative_to_the_room() -> None:
     for _ in range(100):
         quiet.update(0.06)
     assert quiet.value == pytest.approx(0.06)
+
+
+def test_a_macbook_microphone_is_loud_enough() -> None:
+    """A MacBook Air's built-in mic: a still room near 0.02, ordinary speech around 0.1-0.2."""
+    floor = NoiseFloor()
+    for _ in range(50):
+        floor.update(0.02)
+    assert floor.gate() <= 0.1
+    assert floor.sound() <= 0.15
 
 
 @pytest.mark.parametrize("heard", ["a jarvis open firefox", "uh jarvis what time is it", "um jarvis"])

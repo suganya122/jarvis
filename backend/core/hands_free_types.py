@@ -13,15 +13,17 @@ from core.config import VoiceSettings
 HandsFreeState = Literal["off", "idle", "listening", "thinking", "speaking", "approval"]
 POLL_S = 2.0
 TICK_S = 0.25
-QUIET_LEVEL = 0.33
-"""Mic level (0-1, log scale) below which it always counts as quiet (about -42 dBFS); in a noisier
-room the learned background (NoiseFloor) raises it."""
+QUIET_LEVEL = 0.15
+"""Mic level (0-1, log scale) below which it always counts as quiet (about -51 dBFS); in a noisier
+room the learned background (NoiseFloor) raises it. Kept low: a MacBook's built-in microphone
+hears ordinary speech at only about 0.1-0.3."""
 STALLED_EXTRA_S = 1.0
 """Noisy rooms never go quiet: this long after the words stop changing also ends a request."""
 ROTATE_S = 60.0
-GATE_LEVEL = 0.2
-"""While only waiting for the wake word, audio below this (about -48 dBFS) isn't sent to the speech
-engine at all, so a quiet room costs next to no CPU. Half a second before the sound goes with it."""
+GATE_LEVEL = 0.06
+"""While only waiting for the wake word, audio below this (about -58 dBFS) isn't sent to the speech
+engine at all, so a quiet room costs next to no CPU. Half a second before the sound goes with it.
+Once addressed (live, follow-ups, yes/no) everything is sent."""
 GATE_HANG_S = 1.0
 PREROLL_FRAMES = 5
 QUIET_FOR_S = 0.8
