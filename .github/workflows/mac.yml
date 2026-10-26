@@ -94,7 +94,7 @@ jobs:
           grep -q '"type":"ready"' "$OUT/audio-helper.txt"
 
       - name: Cache the small speech model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/test-models
           key: vosk-small-en-us-0.15-30f26242
