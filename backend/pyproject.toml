@@ -18,7 +18,8 @@ dependencies = [
     "python-dotenv>=1.2,<2",
     "sounddevice>=0.5,<1",
     "uvicorn[standard]>=0.54,<1",
-    "vosk>=0.3.45,<0.4",
+    "vosk>=0.3.44,<0.4",
+    "tzdata>=2026.1 ; sys_platform == 'win32'",
 ]
 
 [project.scripts]

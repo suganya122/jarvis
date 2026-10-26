@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: backend/requirements-dev.txt
       - name: Test-only desktop packages for the Hands fixture and voice overlay (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 xvfb at-spi2-core dbus espeak-ng xdotool x11-utils
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 xvfb at-spi2-core dbus espeak-ng xdotool x11-utils x11-xserver-utils
         working-directory: .
       - name: Cache the small speech model used by the voice tests (Linux)
         if: matrix.os == 'ubuntu-latest'

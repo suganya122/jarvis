@@ -56,7 +56,8 @@ is added (milestone 7).
 | uvicorn | 0.54.0 | BSD-3-Clause |
 | uvloop (not Windows) | 0.23.0 | MIT OR Apache-2.0 |
 | sounddevice (microphone and speaker for hands-free voice) | 0.5.6 | MIT |
-| vosk (speech-to-text engine; bundles Kaldi, OpenFST, OpenBLAS) | 0.3.45 | Apache-2.0 (Kaldi/OpenFST Apache-2.0, OpenBLAS BSD-3) |
+| tzdata (Windows only: time zones for reminders and routines) | 2026.4 | Apache-2.0 |
+| vosk (speech-to-text engine; bundles Kaldi, OpenFST, OpenBLAS) | 0.3.45 (0.3.44 on macOS: the last with a Mac build) | Apache-2.0 (Kaldi/OpenFST Apache-2.0, OpenBLAS BSD-3) |
 | watchfiles | 1.3.0 | MIT |
 | websockets | 17.3 | BSD-3-Clause |
 
