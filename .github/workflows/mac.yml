@@ -10,13 +10,19 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      mac_runner:
+        description: "Apple Silicon macOS runner for the Mac jobs"
+        default: macos-15
+        type: choice
+        options: [macos-15, macos-latest]
 
 permissions:
   contents: read
 
 jobs:
   macos-live:
-    runs-on: macos-15
+    runs-on: ${{ inputs.mac_runner || 'macos-15' }}
     env:
       PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
       PYTHONPATH: ${{ github.workspace }}/backend
