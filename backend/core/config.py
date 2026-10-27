@@ -1,6 +1,6 @@
 """User settings: one validated schema, persisted in SQLite."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -285,10 +285,25 @@ class PluginSettings(BaseModel):
     messages_per_minute: int = Field(default=10, ge=1, le=120)
 
 
+DEFAULTS_VERSION = 1
+"""Bumped when a default changes in a way saved settings should pick up once (see upgrade_saved)."""
+
+
+def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
+    """Settings saved before the current defaults: take the new defaults that were never a choice.
+    Until 0.1.17 every request went to the smallest model (Haiku, low effort), which loses the
+    thread of a multi-step conversation; the balanced model (Sonnet) is the default now. Done once:
+    a tier chosen afterwards is kept."""
+    if data.get("defaults_version", 0) < 1 and data.get("default_tier") == "cheap":
+        data["default_tier"] = "balanced"
+    return {**data, "defaults_version": DEFAULTS_VERSION}
+
+
 class Settings(BaseModel):
     schema_version: Literal[1] = 1
+    defaults_version: int = DEFAULTS_VERSION
     provider: ProviderName = "anthropic"
-    default_tier: ModelTier = ModelTier.CHEAP
+    default_tier: ModelTier = ModelTier.BALANCED
     anthropic: AnthropicConfig = Field(default_factory=AnthropicConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)

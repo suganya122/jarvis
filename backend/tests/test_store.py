@@ -94,3 +94,21 @@ async def test_settings_default_then_saved(tmp_path: Path) -> None:
     await store.save_settings(settings.model_copy(update={"provider": "local"}))
     assert (await store.load_settings()).provider == "local"
     await store.close()
+
+
+async def test_settings_saved_with_the_old_cheap_default_move_up_once(tmp_path: Path) -> None:
+    """Every request used the smallest model, which loses the thread of a conversation. Saved
+    settings that still say "cheap" (never a choice) get the balanced model once; a tier chosen
+    afterwards stays."""
+    store = await make_store(tmp_path)
+    await store._conn.execute(
+        "INSERT INTO settings(key, value) VALUES('settings', ?)",
+        ('{"schema_version": 1, "default_tier": "cheap"}',),  # as saved before 0.1.17
+    )
+    await store._conn.commit()
+    upgraded = await store.load_settings()
+    assert upgraded.default_tier == "balanced"
+    chosen = upgraded.model_copy(update={"default_tier": "cheap"})  # the user's own choice, now
+    await store.save_settings(chosen)
+    assert (await store.load_settings()).default_tier == "cheap"
+    await store.close()

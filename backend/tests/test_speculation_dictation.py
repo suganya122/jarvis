@@ -65,7 +65,7 @@ def send(text: str, stream: str = "v1") -> ChatSend:
 async def test_matching_final_reuses_the_speculative_call(tmp_path: Path) -> None:
     provider = FakeProvider(reply="Here is a long answer.", delay_s=0.01)
     rt = await runtime(tmp_path, provider)
-    spec = await rt.chat.speculate(None, "tell me about rust", ModelTier.CHEAP)
+    spec = await rt.chat.speculate(None, "tell me about rust", ModelTier.BALANCED)
     assert spec is not None
     sink = Sink()
     await rt.chat.run(send("Tell me about Rust"), sink, spec)  # same words: case/punctuation don't matter
@@ -96,7 +96,7 @@ async def test_an_adopted_start_carries_on_with_exactly_what_it_sent(tmp_path: P
     and the context gathered then are kept, not the final transcript's capitals or a new context."""
     provider = FakeProvider(script=[FakeStep(tool_calls=[("peek", {"value": "x"})]), FakeStep(text="done")])
     rt = await runtime(tmp_path, provider)
-    spec = await rt.chat.speculate(None, "peek at the notes", ModelTier.CHEAP)
+    spec = await rt.chat.speculate(None, "peek at the notes", ModelTier.BALANCED)
     assert spec is not None
     await rt.chat.run(send("Peek at the notes."), Sink(), spec)
     first, second = provider.requests

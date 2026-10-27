@@ -19,6 +19,7 @@ from core.hands_free_types import (
     APPROVAL_LISTEN_S,
     APPROVAL_SILENCE_S,
     ECHO_CHARS,
+    ECHO_TAIL_S,
     ECHO_WINDOW_S,
     SESSION_TTL_S,
     HandsFreeDeps,
@@ -170,13 +171,13 @@ class TurnsMixin:
         recent = self._echo_of if now - self._said_at < ECHO_WINDOW_S else ""
         self._echo_of, self._said_at = f"{recent} {spoken}".strip()[-ECHO_CHARS:], now
 
-    def _minus_echo(self, heard: str | None, started: float | None) -> str | None:
+    def _minus_echo(self, heard: str | None, first_at: float | None) -> str | None:
         """The start of what's heard right after it spoke (an answer, a question, a cut-in) can be
         its own last words coming back ("four minutes" from a question about a 4-minute video).
         Not while waiting for the wake word: it says "Hey Jarvis" itself, and that mustn't eat the
         person's."""
         echo = self._echo_of
-        if heard is None or started is None or not echo or started - self._said_at > ECHO_WINDOW_S:
+        if heard is None or not first_at or not echo or first_at - self._said_at > ECHO_TAIL_S:
             return heard
         self._echo_of = ""
         return without_echo(heard, echo) or None

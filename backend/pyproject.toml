@@ -1,6 +1,6 @@
 [project]
 name = "local-assistant"  # = APP_ID in contracts/app.py; change both together
-version = "0.1.16"
+version = "0.1.17"
 description = "Local daemon for a cross-platform personal AI assistant"
 license = "MIT"
 requires-python = ">=3.12"

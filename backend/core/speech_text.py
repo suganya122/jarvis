@@ -250,16 +250,31 @@ def is_barge_in(heard: str, saying: str, wake_word: str) -> bool:
     return len([w for w in theirs if len(w) > 2 and w not in FILLERS]) >= 3
 
 
+ECHO_MIN_RUN = 3
+"""Fewest words that can be taken for its own voice coming back."""
+ECHO_TAIL_WORDS = 4
+"""Its echo is the end of what it said: the matched stretch must reach within this many words of it."""
+ECHO_ALONE_RUN = 5
+"""A whole utterance is thrown away as echo only if it is at least this long: a short one ("system
+settings", "safari please") that repeats its question is the person answering."""
+
+
 def without_echo(heard: str, saying: str) -> str:
-    """A request heard right after cutting in, minus its own last words that were still coming back
-    when they spoke: the leading stretch that follows what it said, in order. Their words stay, even ones
-    it also used ("the other screen")."""
+    """The start of `heard` minus its own last words still coming back through the microphone.
+
+    Only the end of what it said can arrive late, so only a stretch of three or more words that
+    reaches the end of its sentence counts, and never a short utterance on its own: a person
+    answering "System Settings or Xcode?" with "system settings" must be heard."""
     rest, own = words(heard), words(saying)
-    run = max((_run(rest, own, start) for start in range(len(own))), default=0)
-    answer = rest[0] in APPROVE or rest[0] in DENY or rest[0] in HOLD_WORDS if rest else False
-    if run >= 2 or (run == 1 and not answer and any(_sounds_like(rest[0], o) for o in own[-3:])):
-        rest = rest[run:]  # one stretch only: the echo is what came just before they spoke
-    return " ".join(rest)
+    runs = [
+        r
+        for start in range(len(own))
+        if (r := _run(rest, own, start)) and len(own) - (start + r) <= ECHO_TAIL_WORDS
+    ]
+    run = max(runs, default=0)
+    if run < ECHO_MIN_RUN or (run == len(rest) and run < ECHO_ALONE_RUN):
+        return " ".join(rest)
+    return " ".join(rest[run:])  # one stretch only: the echo is what came just before they spoke
 
 
 def _run(heard: list[str], own: list[str], start: int) -> int:

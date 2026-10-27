@@ -251,10 +251,24 @@ def test_the_request_after_a_cut_in_loses_only_its_own_last_words() -> None:
     assert without_echo("anything", "") == "anything"
 
 
-def test_its_own_question_coming_back_is_not_the_answer() -> None:
-    """It asked about a 4-minute video and took "four minutes" for the reply; a plain "yes" to a
-    question that ends "say yes or no" must still count."""
+def test_a_short_answer_that_repeats_its_question_is_the_answer() -> None:
+    """It asked "Developer Mode in System Settings, or Xcode?"; the person said "system settings" and
+    its echo filter threw that away as its own words (the conversation then lost its thread). A short
+    utterance is never dropped on its own, and only the end of what it said can be echo."""
+    question = (
+        "Do you want Developer Mode in System Settings, or Developer settings for Xcode or the "
+        "Terminal? I'm not sure which you mean, so I'll check whichever you choose."
+    )
+    assert without_echo("system settings", question) == "system settings"
+    assert without_echo("safari", "Which browser, Chrome or Safari?") == "safari"
+    assert (
+        without_echo("four minutes", "Blinding Lights, 4 minutes, 23 seconds. Say yes or no.")
+        == "four minutes"
+    )
+    assert without_echo("yes", "Click the video. Say yes or no.") == "yes"
+
+
+def test_a_long_stretch_of_its_own_last_words_is_still_removed() -> None:
     question = "Click The Weeknd, Blinding Lights, 4 minutes, 23 seconds on youtube. Say yes or no."
-    assert without_echo("four minutes", question) == ""
-    assert without_echo("yes", question) == "yes"
-    assert without_echo("say yes or no yes", question) == "yes"
+    assert without_echo("say yes or no yes", question) == "yes"  # its tail, then the answer
+    assert without_echo("23 seconds on youtube say yes or no", question) == ""  # nothing but its echo

@@ -124,11 +124,11 @@ def test_provider_error_is_reported(offline_harness: Harness) -> None:
 
 def test_settings_roundtrip_and_validation(harness: Harness) -> None:
     settings = harness.client.get("/api/settings", headers=harness.auth).json()
-    assert settings["default_tier"] == "cheap"
-    settings["default_tier"] = "balanced"
+    assert settings["default_tier"] == "balanced"
+    settings["default_tier"] = "cheap"
     put = harness.client.put("/api/settings", headers=harness.auth, json=settings)
     assert put.status_code == 200
-    assert harness.client.get("/api/settings", headers=harness.auth).json()["default_tier"] == "balanced"
+    assert harness.client.get("/api/settings", headers=harness.auth).json()["default_tier"] == "cheap"
     settings["provider"] = "nonsense"
     assert harness.client.put("/api/settings", headers=harness.auth, json=settings).status_code == 422
 

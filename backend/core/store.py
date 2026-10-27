@@ -10,7 +10,7 @@ import aiosqlite
 from pydantic import BaseModel
 
 from contracts.model import IMAGE_OMITTED, ChatMessage, Completed, Role, ToolResultBlock
-from core.config import Settings
+from core.config import Settings, upgrade_saved
 from core.redact import Redactor
 
 SETTINGS_KEY = "settings"
@@ -92,7 +92,9 @@ class Store:
     async def load_settings(self) -> Settings:
         async with self._conn.execute("SELECT value FROM settings WHERE key=?", (SETTINGS_KEY,)) as cur:
             row = await cur.fetchone()
-        return Settings.model_validate_json(row["value"]) if row else Settings()
+        if not row:
+            return Settings()
+        return Settings.model_validate(upgrade_saved(json.loads(row["value"])))
 
     async def save_settings(self, settings: Settings) -> None:
         await self._conn.execute(

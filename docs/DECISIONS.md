@@ -1435,3 +1435,18 @@ received message could, in principle, talk Jarvis into sending something; the sw
 setting. Settings saved with either earlier default (ask everything; ask sends and payments) are
 upgraded; choices the user made stay. The prompt says to carry a message through (find the person,
 type it as said, send it) and to ask only about the name.
+
+## D112. Don't eat the person's answer; the conversation runs on the balanced model
+
+The echo filter (D104, D107) removed the start of what was heard when it matched what Jarvis had
+just said, any part of it. Asked "Developer Mode in System Settings, or Xcode?", the answer
+"system settings" was thrown away as its own voice and the conversation lost its thread. Now only
+a stretch of 3+ words that reaches the end of its sentence counts, only if the words begin within
+1.5 s of it falling silent, and a short utterance on its own is never dropped (5+ words or
+nothing). With echo cancellation on, real echo is rare, so wrongly dropping an answer costs more
+than letting a little echo through.
+
+Every request ran on the smallest model (Haiku, low effort), which follows a multi-step
+conversation poorly. The default tier is now balanced (Sonnet, medium effort); cheap-first
+escalation still applies when a tier is chosen explicitly. Saved settings that still said "cheap"
+are upgraded once (`defaults_version`); a tier chosen afterwards is kept.

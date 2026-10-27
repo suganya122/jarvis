@@ -29,6 +29,8 @@ PREROLL_FRAMES = 5
 QUIET_FOR_S = 0.8
 SPEAK_TAIL_S = 0.5
 SESSION_TTL_S = 600.0
+ECHO_TAIL_S = 1.5
+"""Its echo starts within this long of it falling silent; a person's answer usually comes later."""
 ECHO_WINDOW_S = 4.0
 """For this long after it stops speaking, its own words may still reach the microphone."""
 ECHO_CHARS = 1200

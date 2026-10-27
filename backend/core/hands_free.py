@@ -255,7 +255,7 @@ class HandsFree(TurnsMixin):
         self._consuming = True
         now = self._d.clock()
         started = last_sound = last_change = now
-        text, addressed, final = "", not wake, None
+        text, addressed, final, first_at = "", not wake, None, 0.0
         preroll: deque[str] = deque(maxlen=PREROLL_FRAMES)
         gate_until = 0.0
         try:
@@ -307,7 +307,7 @@ class HandsFree(TurnsMixin):
                         final = event.text
                         break
                     if event.text and event.text != text:
-                        text, last_change = event.text, now
+                        text, last_change, first_at = event.text, now, first_at or now
                         last_sound = max(last_sound, now)
                         if wake and not addressed:
                             if match_wake(text, self._wake_word())[0]:
@@ -329,7 +329,7 @@ class HandsFree(TurnsMixin):
         finally:
             self._consuming = False
             await self._drop_stream(stream, abort=final is None)
-        return self._minus_echo((final or text).strip() or None, None if wake else started)
+        return self._minus_echo((final or text).strip() or None, None if wake else first_at)
 
     async def _wait_quiet(self) -> None:
         """Let the room go quiet (frames are read, nothing is transcribed)."""
