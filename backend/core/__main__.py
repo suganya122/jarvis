@@ -3,7 +3,11 @@
 import argparse
 import logging
 import os
+import sys
+import threading
+import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 import uvicorn
@@ -76,7 +80,12 @@ def main() -> None:
         if not args.no_hands_free
         else ""
     )
-    print(f"\n{APP_NAME} is running. {talk}Settings and history (optional):\n  {url}\n", flush=True)
+    if sys.stdout.isatty():  # a terminal, not a log file: the link carries the daemon's token
+        print(f"\n{APP_NAME} is running. {talk}Settings and history (optional):\n  {url}\n", flush=True)
+    else:
+        print(f"{APP_NAME} is running. {talk}".strip(), flush=True)
+    if os.environ.get("JARVIS_SPEECH_HELPER"):
+        _exit_with_parent(request_exit)
     if args.open:
         webbrowser.open(url)
     config = uvicorn.Config(
@@ -89,6 +98,20 @@ def main() -> None:
     )
     server = uvicorn.Server(config)
     server.run()
+
+
+def _exit_with_parent(request_exit: Callable[[], None]) -> None:
+    """Started by Jarvis.app: if it goes away (stopped from outside, crashed), go with it, rather
+    than run on without the helpers it provides (speech, audio, window control)."""
+    parent = os.getppid()
+
+    def watch() -> None:
+        while os.getppid() == parent:
+            time.sleep(2)
+        print("Jarvis.app is gone; stopping", flush=True)
+        request_exit()
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 if __name__ == "__main__":

@@ -33,15 +33,20 @@ REPLY_TIMEOUT_S = 15.0
 
 class MacHands:
     def __init__(self, helper: str, blocked_apps: Iterable[str] = ()) -> None:
-        self._proc = subprocess.Popen(  # noqa: S603 - our own app's executable
-            [helper, "--hands"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
-        )
+        self._helper = helper
+        self._start()
         self._blocked = [b.casefold() for b in blocked_apps if b]
         self._ids = itertools.count(1)
         self._waiting: dict[int, queue.Queue[dict[str, Any]]] = {}
         self._lock = threading.Lock()
         self._asked = False
         self._window_apps: dict[str, str] = {}
+
+    def _start(self) -> None:
+        """(Re)start the helper: if it stopped (Jarvis.app restarted), the next request starts one."""
+        self._proc = subprocess.Popen(  # noqa: S603 - our own app's executable
+            [self._helper, "--hands"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )
         threading.Thread(target=self._read, args=(self._proc.stdout,), daemon=True).start()
 
     # ---- talking to the helper ---------------------------------------------------------
@@ -56,8 +61,10 @@ class MacHands:
                     box.put(reply)
 
     def _call(self, op: str, **args: Any) -> Any:
-        if self._proc.poll() is not None or self._proc.stdin is None:
-            raise AtspiError("Jarvis.app's accessibility helper stopped; restart Jarvis")
+        if self._proc.poll() is not None:
+            self._start()  # handles from the old one are gone: list windows again
+        if self._proc.stdin is None:
+            raise AtspiError("Jarvis.app's accessibility helper couldn't start; restart Jarvis")
         request_id = next(self._ids)
         box: queue.Queue[dict[str, Any]] = queue.Queue()
         self._waiting[request_id] = box

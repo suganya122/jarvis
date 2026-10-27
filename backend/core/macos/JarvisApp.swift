@@ -96,6 +96,7 @@ final class Daemon {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let daemon = Daemon()
     private let hotkey = Hotkey()
+    private let terminateSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
     private var statusItem: NSStatusItem!
     private let stateItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause listening", action: #selector(togglePause), keyEquivalent: "")
@@ -121,6 +122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
 
         daemon.start()
+        // Stopped from outside (pkill, an update): close down like Quit, assistant included.
+        signal(SIGTERM, SIG_IGN)
+        terminateSignal.setEventHandler { NSApp.terminate(nil) }
+        terminateSignal.resume()
         hotkey.onPress = { Assistant.post("/api/voice/command", ["action": "toggle_chat"]) }
         hotkey.onRelease = { Assistant.post("/api/voice/command", ["action": "finish"]) }
         hotkey.register()

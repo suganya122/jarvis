@@ -88,3 +88,14 @@ def test_dictation_off_comes_back_as_an_error_not_silence(tmp_path: Path) -> Non
         time.sleep(0.05)
         events = stt.feed("s1", b"\x00\x00" * 10)
     assert [(e.kind, e.error) for e in events] == [("final", "Dictation is off")]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a script helper needs a POSIX shebang")
+def test_a_stopped_helper_is_started_again_instead_of_staying_deaf(tmp_path: Path) -> None:
+    """Jarvis.app restarted under it once: "Apple speech recognition stopped" until a restart."""
+    stt = AppleSpeechToText(helper(tmp_path))
+    _wait_ready(stt)
+    stt._proc.kill()
+    stt._proc.wait()
+    stt.open("s2", 16_000)  # a new helper, not an error
+    assert stt.ready is True and stt._proc.poll() is None

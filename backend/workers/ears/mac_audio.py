@@ -10,6 +10,7 @@ devices, say), the helper carries on without it and reports why.
 import base64
 import contextlib
 import json
+import os
 import subprocess
 import threading
 from collections.abc import Callable
@@ -33,6 +34,7 @@ class MacAudio:
         self._on_problem = on_problem
         self._lock = threading.Lock()
         self._ready = threading.Event()
+        self._closing = False
         self.echo_cancel = False
         self.microphone = ""
         self.detail = "starting"
@@ -66,6 +68,9 @@ class MacAudio:
                 self.detail = str(msg.get("detail", ""))
                 self._on_problem(self.detail)
         self._ready.set()  # it exited: don't keep anyone waiting
+        if not self._closing:  # stopped under us: exit, so core starts the ears afresh with a new one
+            self._on_problem("Jarvis.app's audio stopped; restarting the ears")
+            os._exit(3)
 
     def send(self, message: dict[str, Any]) -> bool:
         if self._proc.poll() is not None or self._proc.stdin is None:
@@ -84,6 +89,7 @@ class MacAudio:
         return self._proc.poll() is None
 
     def close(self) -> None:
+        self._closing = True
         with contextlib.suppress(OSError):
             if self._proc.stdin is not None:
                 self._proc.stdin.close()

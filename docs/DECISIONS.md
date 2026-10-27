@@ -1394,3 +1394,18 @@ other apps' audio ducked as little as macOS allows (14+). If voice processing fa
 speaker on different devices) or starves the mic, it carries on without it and says so in the
 log. The ears worker uses it when `voice.echo_cancel` is on and Jarvis.app is installed; it falls
 back to the plain mic and `say` otherwise. Next: the Kokoro voice played through the same engine.
+
+## D109. macOS: permissions that survive updates, and helpers that recover
+
+Jarvis.app was signed ad hoc, so every rebuild was a new app to macOS: the Accessibility switch
+still showed on, but applied to the old build ("control access isn't on" with it on). The
+installer now makes this Mac its own code-signing certificate once (login keychain, codeSigning
+only, not trusted for anything else) and signs Jarvis.app with it, so rebuilds keep the same
+identity; if that fails it falls back to ad hoc. The signing identity is part of the rebuild stamp.
+
+`pkill -x Jarvis` also stops the helpers (same executable), and stopping Jarvis.app from outside
+left the assistant running without them ("Apple speech recognition stopped"). Now Jarvis.app
+handles SIGTERM like Quit, the assistant exits when Jarvis.app is gone, the speech and hands
+helpers restart on the next request, and the ears exit (to be restarted) if their audio helper
+stops. The settings-page link, which carries the daemon's token, is printed only to a terminal,
+never into Jarvis.log.

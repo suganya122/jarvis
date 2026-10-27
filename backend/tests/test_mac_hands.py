@@ -109,3 +109,10 @@ def test_enter_in_a_chat_app_counts_as_sending(keys: list[str], where: str, risk
     from workers.hands.risk import key_risk
 
     assert key_risk(keys, where) == risk
+
+
+def test_a_stopped_helper_is_started_again(tmp_path: Path) -> None:
+    h, _ = hands(tmp_path)
+    h._proc.kill()
+    h._proc.wait()
+    assert [w.app for w in h.list_windows()] == ["Safari"]  # a new helper answered

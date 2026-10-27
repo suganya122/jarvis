@@ -25,11 +25,17 @@ PERMISSION = "Allow Speech Recognition for Jarvis: System Settings → Privacy &
 
 class AppleSpeechToText:
     def __init__(self, helper: str) -> None:
-        self._proc = subprocess.Popen(  # noqa: S603 - our own app's executable
-            [helper, "--speech"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
-        )  # its notes (stderr) go to the worker's, and from there to the log
+        self._helper = helper
         self._events: dict[str, queue.Queue[TranscriptEvent]] = {}
         self._lock = threading.Lock()
+        self._start()
+
+    def _start(self) -> None:
+        """(Re)start the helper. If it's stopped (Jarvis.app restarted, a crash), the next request
+        starts a new one instead of the assistant staying deaf."""
+        self._proc = subprocess.Popen(  # noqa: S603 - our own app's executable
+            [self._helper, "--speech"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )  # its notes (stderr) go to the worker's, and from there to the log
         self.ready: bool | None = None
         self.detail = "waiting for Speech Recognition permission"
         threading.Thread(target=self._read, args=(self._proc.stdout,), daemon=True).start()
@@ -64,6 +70,13 @@ class AppleSpeechToText:
             self._proc.stdin.flush()
 
     def open(self, stream_id: str, sample_rate: int) -> None:
+        if self._proc.poll() is not None:
+            self._events.clear()
+            self._start()
+            for _ in range(50):  # its answer to the permission question comes first
+                if self.ready is not None:
+                    break
+                time.sleep(0.05)
         if self.ready is False:
             raise SttError(f"{PERMISSION} ({self.detail})")
         self._events[stream_id] = queue.Queue()

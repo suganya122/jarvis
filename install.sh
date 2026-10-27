@@ -201,6 +201,44 @@ if [ "${JARVIS_SKIP_BROWSER:-0}" != "1" ] && ! have_browser; then
   fi
 fi
 
+# macOS ties the microphone, speech and Accessibility permissions to how an app is signed. Signed
+# "ad hoc", every rebuild looks like a new app and the switches in System Settings stop applying.
+# So this Mac gets its own code-signing certificate, made once, in the login keychain, used only to
+# sign Jarvis.app. It isn't trusted by macOS for anything else. If making it fails, ad hoc it is.
+SIGNING_NAME="$NAME Local Signing"
+signing_identity() {
+  if security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGNING_NAME\""; then
+    echo "$SIGNING_NAME"; return
+  fi
+  [ "${JARVIS_ADHOC_SIGN:-0}" = "1" ] && return
+  local dir; dir="$(mktemp -d)"
+  cat > "$dir/cert.cnf" <<CNF
+[req]
+distinguished_name = dn
+prompt = no
+x509_extensions = ext
+[dn]
+CN = $SIGNING_NAME
+[ext]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+CNF
+  local pass; pass="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  if openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$dir/cert.cnf" \
+       -keyout "$dir/key.pem" -out "$dir/cert.pem" >/dev/null 2>&1 &&
+     { openssl pkcs12 -export -legacy -inkey "$dir/key.pem" -in "$dir/cert.pem" -name "$SIGNING_NAME" \
+         -out "$dir/id.p12" -passout "pass:$pass" >/dev/null 2>&1 ||
+       openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/cert.pem" -name "$SIGNING_NAME" \
+         -out "$dir/id.p12" -passout "pass:$pass" >/dev/null 2>&1; } &&
+     security import "$dir/id.p12" -k "$HOME/Library/Keychains/login.keychain-db" -P "$pass" \
+       -T /usr/bin/codesign >/dev/null 2>&1; then
+    say "Made a signing certificate for $NAME.app, so macOS remembers what you've allowed it." >&2
+  fi
+  rm -rf "$dir"
+  security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGNING_NAME\"" && echo "$SIGNING_NAME"
+}
+
 # ---- 6. macOS: Jarvis.app (menu bar, ⌃⌥Space, Apple speech), built from the installed sources --
 LAUNCH="$BIN_DIR/jarvis"
 if [ "$OS" = mac ]; then
@@ -209,7 +247,8 @@ if [ "$OS" = mac ]; then
   # macOS ties the microphone, speech and Accessibility permissions to this exact build, so it's
   # only rebuilt when its sources change: an ordinary update keeps what you've allowed.
   STAMP_FILE="$APP/Contents/Resources/build-stamp"
-  STAMP="$(cat "$SRC"/*.swift | sha256 -)-$NAME-$PY"
+  IDENTITY="$(signing_identity)"  # part of the stamp: a change of signing means a rebuild
+  STAMP="$(cat "$SRC"/*.swift | sha256 -)-$NAME-$PY-${IDENTITY:-adhoc}"
   if [ -x "$APP/Contents/MacOS/$NAME" ] && [ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$STAMP" ]; then
     say "$NAME.app is up to date (your permissions stay as they are)."
   else
@@ -235,10 +274,19 @@ if [ "$OS" = mac ]; then
 </dict></plist>
 PLIST
   swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
-  codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
+  if [ -n "$IDENTITY" ] && codesign --force --sign "$IDENTITY" "$APP" >/dev/null 2>&1; then
+    : # signed with this Mac's own Jarvis certificate: permissions survive rebuilds
+  else
+    codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
+  fi
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
   printf '%s' "$STAMP" > "$STAMP_FILE"
-  warn "$NAME.app was rebuilt: macOS may ask again for the microphone, speech recognition and Accessibility."
+  if [ -n "$IDENTITY" ]; then
+    warn "$NAME.app is now signed with this Mac's own certificate. Allow it once more (microphone, speech,"
+    warn "Accessibility: remove Jarvis there with - and add it again with +); after that, updates keep it."
+  else
+    warn "$NAME.app was rebuilt: macOS may ask again for the microphone, speech recognition and Accessibility."
+  fi
   fi
   LAUNCH="$APP/Contents/MacOS/$NAME"
 fi
