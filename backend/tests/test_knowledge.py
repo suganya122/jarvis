@@ -243,10 +243,12 @@ async def test_a_turn_is_learned_from_in_the_background(kg: KnowledgeStore) -> N
     provider, costs = FakeProvider(reply=json.dumps(BROTHER)), Costs()
     learner = Learner(kg, lambda: provider, lambda: settings(), costs)
     learner.schedule(SAID, "Got it.")
-    for _ in range(100):
-        if (await kg.counts())["facts"]:
+    for _ in range(300):
+        if (await kg.counts())["facts"] == 2:  # both of them: they're written one after the other
             break
         await asyncio.sleep(0.02)
+    if learner._worker is not None:
+        await learner._worker  # finished, so nothing is still writing when the test ends
     assert (await kg.counts()) == {"entities": 1, "facts": 2}
     [request] = provider.requests
     assert SAID in request.messages[0].text
