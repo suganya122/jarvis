@@ -27,6 +27,8 @@ REACHES_THE_COMPUTER = frozenset(
 """After reading outside content (a page, a file, command output), steps with these still ask: a
 planted instruction could otherwise run commands, change files, type into the user's apps, or
 leave something behind that acts later. Clicking around in its own browser doesn't ask."""
+LOOSE_REACH = frozenset({Capability.SHELL_RUN, Capability.FS_WRITE})
+"""With full automation, only commands and file changes still ask after reading outside content."""
 
 
 class Decision(BaseModel):
@@ -47,6 +49,7 @@ def decide(
     direct: bool = False,
     background: bool = False,
     remote: str | None = None,
+    full_automation: bool = False,
 ) -> Decision:
     """Order matters: deny beats everything, then the non-negotiable approvals."""
     caps = list(capabilities)
@@ -59,6 +62,11 @@ def decide(
         )
     if risk.always_requires_approval:
         return Decision(action="ask", reason=f"{risk.value.replace('_', ' ')} actions always need approval")
+    if risk is RiskLevel.EXTERNAL_SEND:
+        if not full_automation:
+            return Decision(action="ask", reason="external send actions always need approval")
+        if remote or background:  # nobody is at the computer, or the request came from a chat account
+            return Decision(action="ask", reason="sending asks when it wasn't requested from this computer")
     if remote and risk is not RiskLevel.READ:
         # A chat app account can be lost or hijacked: changes made from it always ask,
         # can't be remembered, and typed commands get no "direct" pass.
@@ -68,7 +76,8 @@ def decide(
     if direct:
         # The user typed this exact command; nothing the model read can have caused it.
         return Decision(action="allow", reason="you asked for this directly")
-    if tainted and risk is not RiskLevel.READ and set(caps) & REACHES_THE_COMPUTER:
+    reach = LOOSE_REACH if full_automation else REACHES_THE_COMPUTER
+    if tainted and risk is not RiskLevel.READ and set(caps) & reach:
         return Decision(
             action="ask",
             reason="this chat contains content from outside (files, pages, command output)",

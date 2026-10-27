@@ -185,6 +185,7 @@ class ToolExecutor:
             direct=direct,
             background=background,
             remote=perms.remote,
+            full_automation=settings.full_automation,
         )
         await self._store.audit(
             "assistant",

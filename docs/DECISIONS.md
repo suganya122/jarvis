@@ -1420,3 +1420,18 @@ the user had (`say` can, Siri voices included). So speech is `say` again, in the
 before, and only the microphone goes through voice processing. One reported macOS test had voice
 processing removing audio from another process too; if it doesn't on a given Mac, the transcript
 check (D104, D107) still keeps its own words out.
+
+## D111. Full automation: a send just happens (the user's repeated, explicit choice)
+
+D106 let a spoken yes approve a send; the user then made clear they don't want to be asked at all
+("if I say send a message to Srinith that I'm out of station it should do it; ask only to clarify
+the name; ask permission only for payments and deleting"). `tools.full_automation` (default on):
+sends and app control don't ask; paying and deleting always do (that's the step's risk). Sends
+still ask when nobody is at this computer: a request from a chat app (an account can be hijacked)
+and unattended background routines. After reading outside content, only commands and file changes
+still ask (reading WhatsApp's own window to find a contact is "outside content" too, so anything
+broader made every message ask). The trade-off is stated plainly to the user: a web page or a
+received message could, in principle, talk Jarvis into sending something; the switch is one
+setting. Settings saved with either earlier default (ask everything; ask sends and payments) are
+upgraded; choices the user made stay. The prompt says to carry a message through (find the person,
+type it as said, send it) and to ask only about the name.

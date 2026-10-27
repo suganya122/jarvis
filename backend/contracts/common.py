@@ -25,7 +25,9 @@ class RiskLevel(StrEnum):
 
     @property
     def always_requires_approval(self) -> bool:
-        return self in {RiskLevel.DESTRUCTIVE, RiskLevel.EXTERNAL_SEND, RiskLevel.PURCHASE}
+        """Deleting and paying always ask, whatever the settings. Sending asks unless the user has
+        chosen full automation (tools.full_automation): see core.policy.decide."""
+        return self in {RiskLevel.DESTRUCTIVE, RiskLevel.PURCHASE}
 
 
 class Capability(StrEnum):

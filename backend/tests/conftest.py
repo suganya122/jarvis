@@ -26,6 +26,7 @@ def strict_approvals(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
     from core import config
 
     monkeypatch.setattr(config, "ASK_FIRST", tuple(c for c in Capability if c is not Capability.FS_READ))
+    monkeypatch.setattr(config, "FULL_AUTOMATION", False)
 
 
 PORT = 8765

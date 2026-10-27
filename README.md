@@ -66,10 +66,11 @@ microphone) or `wmctrl` is missing. Run the same command again to update. Uninst
 3. Say **"Hey Jarvis, what time is it?"** (on a Mac you can also hold ⌃⌥Space). It stays
    **live**: keep talking, no wake word needed, until you say **"go offline"**.
 
-- **Approvals:** it just does what you ask. It asks first only before sending something to
-  someone, spending money, or deleting ("This will send something: …"), and before touching
-  your computer after reading a web page or file. Answer "yes" or "no", or use the buttons.
-  Settings → Permissions can make any kind of step ask.
+- **Approvals:** full automation: it does what you ask, start to finish, sending messages
+  included. It asks only before **paying or deleting**, and for sends requested from a chat
+  app or an unattended routine. If it can't tell who you mean it asks one short question about
+  the name. Settings → Tools → full automation switches the stricter behaviour back on (every send
+  asks, and so does app control after reading outside content).
 - **Interrupting:** say "wait", "stop" or "no" while it talks, or just start talking.
 - **Privacy:** speech is recognised on this computer. What you say is thrown away unless it
   starts with the wake word. **Pause everything** closes the microphone.

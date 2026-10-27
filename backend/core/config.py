@@ -20,22 +20,29 @@ class ServerConfig(BaseModel):
     max_concurrent_chats: int = Field(default=3, ge=1, le=10)
 
 
-ASK_FIRST = (Capability.SEND_EXTERNAL, Capability.PURCHASE)
+FULL_AUTOMATION = True
+"""Out of the box it does what it's asked, sending messages included, and asks only before
+paying or deleting (tools.full_automation in Settings turns the stricter behaviour back on)."""
+ASK_FIRST = (Capability.PURCHASE,)
 
 
 def default_policies() -> dict[Capability, PolicyMode]:
-    """Like a real assistant: it just does what it's asked, and asks first only before sending
-    something to someone or spending money. Anything that deletes or can't be undone always asks
-    too (that's the step's risk, not a setting), and so do changes after reading outside content
-    that reach beyond its own browser (see policy.decide)."""
+    """Like a real assistant: it just does what it's asked. Paying and deleting always ask (that's
+    the step's risk, see policy.decide); everything else is allowed unless the user says otherwise."""
     return {c: "ask" if c in ASK_FIRST else "allow" for c in Capability}
 
 
 def _was_old_default(policies: dict[Capability, PolicyMode]) -> bool:
-    """Until 0.1.10 everything asked except reading files; settings saved then are upgraded."""
-    return bool(policies) and all(
-        mode == ("allow" if cap is Capability.FS_READ else "ask") for cap, mode in policies.items()
+    """Settings saved with an earlier default (never touched by the user) are upgraded:
+    until 0.1.9 everything asked except reading files; until 0.1.15 sending also asked."""
+    if not policies:
+        return False
+    first = all(mode == ("allow" if cap is Capability.FS_READ else "ask") for cap, mode in policies.items())
+    second = all(
+        mode == ("ask" if cap in (Capability.SEND_EXTERNAL, Capability.PURCHASE) else "allow")
+        for cap, mode in policies.items()
     )
+    return first or second
 
 
 DEFAULT_DENIED_PATHS = [
@@ -88,6 +95,10 @@ DEFAULT_SHELL_ALLOWLIST = [
 
 class ToolSettings(BaseModel):
     policies: dict[Capability, PolicyMode] = Field(default_factory=default_policies)
+    full_automation: bool = Field(default_factory=lambda: FULL_AUTOMATION)
+    """On: "just do it". Sending messages and driving other apps don't ask; paying and deleting
+    always do. Sends still ask for requests that came from a chat app and for unattended routines.
+    Off: every send asks, and so does any app control after reading outside content."""
 
     @field_validator("policies")
     @classmethod
