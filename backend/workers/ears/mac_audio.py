@@ -1,10 +1,8 @@
-"""macOS: the microphone and the voice through Jarvis.app (`Jarvis --audio`, core/macos/Audio.swift).
-
-Both run in one audio engine with Apple's voice processing on, so what the assistant says is
-taken out of what the microphone hears: the person can talk over it without it hearing itself.
-`MacAudio.mic` and `MacAudio.speaker` stand in for `Mic` and `Speaker` (same calls), so the rest
-of the ears process doesn't change. If voice processing can't run (a mic and speaker on different
-devices, say), the helper carries on without it and reports why.
+"""macOS: the microphone through Jarvis.app (`Jarvis --audio`, core/macos/Audio.swift), with
+Apple's voice processing (echo cancellation) on, so the person can talk over it. Speech stays the
+Mac's own `say` in the voice chosen in System Settings (see _Speaker). `MacAudio.mic` stands in for
+`Mic`. If voice processing can't run (a mic and speaker on different devices, say), the helper
+carries on without it and reports why.
 """
 
 import base64
@@ -17,6 +15,8 @@ from collections.abc import Callable
 from typing import IO, Any
 
 from contracts.ears import EarsSaid, EarsSay
+
+from .speaker import Speaker
 
 READY_WAIT_S = 10.0
 
@@ -114,13 +114,17 @@ class _Mic:
 
 
 class _Speaker:
+    """The Mac's own `say`, in the voice chosen in System Settings (Siri voices included, which
+    other apps' speech engines can't use), at full quality. Playing speech through the
+    voice-processing engine instead made it muffled and swapped the voice. Only the microphone
+    goes through voice processing; the transcript check (speech_text.their_words) still tells
+    its own voice apart if any of it reaches the microphone."""
+
     def __init__(self, audio: MacAudio) -> None:
-        self._audio = audio
+        self._speaker = Speaker(audio.said)
 
     def say(self, msg: EarsSay) -> None:
-        if not self._audio.send({"type": "say", "id": msg.say_id, "text": msg.text}):
-            detail = "Jarvis.app's audio stopped; restart Jarvis"
-            self._audio.said(EarsSaid(say_id=msg.say_id, ok=False, detail=detail, voice="none"))
+        self._speaker.say(msg)
 
     def stop(self) -> None:
-        self._audio.send({"type": "stop"})
+        self._speaker.stop()

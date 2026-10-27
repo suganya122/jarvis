@@ -62,24 +62,20 @@ def test_it_reports_echo_cancellation_and_the_microphone(tmp_path: Path) -> None
     audio.close()
 
 
-def test_speaking_reports_when_it_is_done_and_stop_cuts_it_off(tmp_path: Path) -> None:
+def test_speech_is_the_macs_own_say_not_the_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Playing speech through the voice-processing engine muffled it and swapped the voice the
+    person had chosen; speech goes through `say` (recorded to a file here, never played)."""
+    sink = tmp_path / "said.txt"
+    monkeypatch.setenv("ASSISTANT_EARS_SINK", str(sink))
     audio, _, said = start(tmp_path)
     audio.speaker.say(EarsSay(say_id="a", text="It is noon."))
     until(lambda: said)
-    assert (said[0].say_id, said[0].ok, said[0].voice) == ("a", True, "apple")
-    audio.speaker.say(EarsSay(say_id="b", text="A much longer answer."))
-    threading.Event().wait(0.05)
-    audio.speaker.stop()
+    assert (said[0].say_id, said[0].ok, said[0].voice) == ("a", True, "test")
+    assert sink.read_text() == "It is noon.\n"
+    audio.close()
+    audio.speaker.say(EarsSay(say_id="b", text="Still speaks."))  # even with the engine gone
     until(lambda: len(said) == 2)
-    assert (said[1].say_id, said[1].ok, said[1].detail) == ("b", False, "stopped")
-    audio.close()
-
-
-def test_if_the_helper_is_gone_a_say_fails_at_once_instead_of_hanging(tmp_path: Path) -> None:
-    audio, _, said = start(tmp_path)
-    audio.close()
-    audio.speaker.say(EarsSay(say_id="c", text="Hello."))
-    assert said and said[-1].say_id == "c" and not said[-1].ok
+    assert said[1].ok
 
 
 def test_the_ears_process_starts_with_it_and_hears(tmp_path: Path) -> None:

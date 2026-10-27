@@ -1411,3 +1411,12 @@ handles SIGTERM like Quit, the assistant exits when Jarvis.app is gone, the spee
 helpers restart on the next request, and the ears exit (to be restarted) if their audio helper
 stops. The settings-page link, which carries the daemon's token, is printed only to a terminal,
 never into Jarvis.log.
+
+## D110. macOS: speech back to `say`; voice processing only on the microphone
+
+Playing speech through the voice-processing engine (D108) sounded muffled (voice processing tunes
+what it plays like a phone call) and changed the voice: AVSpeechSynthesizer can't use the voice
+the user had (`say` can, Siri voices included). So speech is `say` again, in the same voice as
+before, and only the microphone goes through voice processing. One reported macOS test had voice
+processing removing audio from another process too; if it doesn't on a given Mac, the transcript
+check (D104, D107) still keeps its own words out.
