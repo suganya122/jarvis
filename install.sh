@@ -203,16 +203,22 @@ fi
 
 # macOS ties the microphone, speech and Accessibility permissions to how an app is signed. Signed
 # "ad hoc", every rebuild looks like a new app and the switches in System Settings stop applying.
-# So this Mac gets its own code-signing certificate, made once, in the login keychain, used only to
-# sign Jarvis.app. It isn't trusted by macOS for anything else. If making it fails, ad hoc it is.
+# So this Mac gets its own code-signing certificate, made once and used only to sign Jarvis.app,
+# in a keychain of its own (not the login keychain) whose random password is kept beside it, so
+# codesign never stops to ask. macOS doesn't trust it for anything else. Every step has a time
+# limit; if anything fails or stalls, Jarvis.app is signed ad hoc as before.
 SIGNING_NAME="$NAME Local Signing"
+SIGNING_DIR="$PREFIX/signing"
+SIGNING_KEYCHAIN="$SIGNING_DIR/signing.keychain-db"
+timed() { perl -e 'alarm shift; exec @ARGV' "$@"; }  # macOS has no timeout(1)
 signing_identity() {
-  if security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGNING_NAME\""; then
-    echo "$SIGNING_NAME"; return
-  fi
   [ "${JARVIS_ADHOC_SIGN:-0}" = "1" ] && return
-  local dir; dir="$(mktemp -d)"
-  cat > "$dir/cert.cnf" <<CNF
+  if [ ! -f "$SIGNING_KEYCHAIN" ] || [ ! -f "$SIGNING_DIR/password" ]; then
+    rm -rf "$SIGNING_DIR" && mkdir -p "$SIGNING_DIR" && chmod 700 "$SIGNING_DIR"
+    od -An -N24 -tx1 /dev/urandom | tr -d ' \n' > "$SIGNING_DIR/password" && chmod 600 "$SIGNING_DIR/password"
+    local kpass p12 dir; kpass="$(cat "$SIGNING_DIR/password")"; dir="$(mktemp -d)"
+    p12="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    cat > "$dir/cert.cnf" <<CNF
 [req]
 distinguished_name = dn
 prompt = no
@@ -224,19 +230,29 @@ basicConstraints = critical, CA:false
 keyUsage = critical, digitalSignature
 extendedKeyUsage = critical, codeSigning
 CNF
-  local pass; pass="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-  if openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$dir/cert.cnf" \
-       -keyout "$dir/key.pem" -out "$dir/cert.pem" >/dev/null 2>&1 &&
-     { openssl pkcs12 -export -legacy -inkey "$dir/key.pem" -in "$dir/cert.pem" -name "$SIGNING_NAME" \
-         -out "$dir/id.p12" -passout "pass:$pass" >/dev/null 2>&1 ||
-       openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/cert.pem" -name "$SIGNING_NAME" \
-         -out "$dir/id.p12" -passout "pass:$pass" >/dev/null 2>&1; } &&
-     security import "$dir/id.p12" -k "$HOME/Library/Keychains/login.keychain-db" -P "$pass" \
-       -T /usr/bin/codesign >/dev/null 2>&1; then
-    say "Made a signing certificate for $NAME.app, so macOS remembers what you've allowed it." >&2
+    if timed 30 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$dir/cert.cnf" \
+         -keyout "$dir/key.pem" -out "$dir/cert.pem" >/dev/null 2>&1 &&
+       { timed 30 openssl pkcs12 -export -legacy -inkey "$dir/key.pem" -in "$dir/cert.pem" \
+           -name "$SIGNING_NAME" -out "$dir/id.p12" -passout "pass:$p12" >/dev/null 2>&1 ||
+         timed 30 openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/cert.pem" \
+           -name "$SIGNING_NAME" -out "$dir/id.p12" -passout "pass:$p12" >/dev/null 2>&1; } &&
+       timed 30 security create-keychain -p "$kpass" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
+       timed 30 security set-keychain-settings "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
+       timed 30 security unlock-keychain -p "$kpass" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
+       timed 30 security import "$dir/id.p12" -k "$SIGNING_KEYCHAIN" -P "$p12" -T /usr/bin/codesign \
+         >/dev/null 2>&1 &&
+       timed 30 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" \
+         "$SIGNING_KEYCHAIN" >/dev/null 2>&1; then
+      say "Made a signing certificate for $NAME.app, so macOS remembers what you've allowed it." >&2
+    else
+      rm -rf "$SIGNING_DIR"
+    fi
+    rm -rf "$dir"
   fi
-  rm -rf "$dir"
-  security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGNING_NAME\"" && echo "$SIGNING_NAME"
+  [ -f "$SIGNING_DIR/password" ] || return
+  timed 30 security unlock-keychain -p "$(cat "$SIGNING_DIR/password")" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || return
+  timed 30 security find-identity -p codesigning "$SIGNING_KEYCHAIN" 2>/dev/null | grep -q "\"$SIGNING_NAME\"" &&
+    echo "$SIGNING_NAME"
 }
 
 # ---- 6. macOS: Jarvis.app (menu bar, ⌃⌥Space, Apple speech), built from the installed sources --
@@ -274,10 +290,12 @@ if [ "$OS" = mac ]; then
 </dict></plist>
 PLIST
   swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
-  if [ -n "$IDENTITY" ] && codesign --force --sign "$IDENTITY" "$APP" >/dev/null 2>&1; then
+  if [ -n "$IDENTITY" ] &&
+     timed 60 codesign --force --keychain "$SIGNING_KEYCHAIN" --sign "$IDENTITY" "$APP" >/dev/null 2>&1; then
     : # signed with this Mac's own Jarvis certificate: permissions survive rebuilds
   else
-    codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
+    IDENTITY="" STAMP="${STAMP%-*}-adhoc"  # what was really used: a later install tries again
+    timed 60 codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
   fi
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
   printf '%s' "$STAMP" > "$STAMP_FILE"

@@ -106,6 +106,9 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then
             ~/Applications/Jarvis.app/Contents/MacOS/Jarvis --version
             plutil -lint ~/Applications/Jarvis.app/Contents/Info.plist
+            # signed with this Mac's own certificate (so permissions survive updates), never stuck on a prompt
+            codesign -dvv ~/Applications/Jarvis.app 2>&1 | grep -E "^(Authority|Signature|Identifier)=" || true
+            codesign -dvv ~/Applications/Jarvis.app 2>&1 | grep -q "^Authority=Jarvis Local Signing"
             # Apple speech helper: it must start and report (permission can't be granted on CI)
             (sleep 8; echo '{"type":"open","id":"t","rate":16000}') | timeout 15 ~/Applications/Jarvis.app/Contents/MacOS/Jarvis --speech | head -2 || true
           fi
