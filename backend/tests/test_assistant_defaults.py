@@ -77,6 +77,10 @@ def test_after_reading_outside_content_only_commands_and_file_changes_ask() -> N
     # a planted instruction must not run commands or change files unasked
     assert ask("run_command", RiskLevel.WRITE, Capability.SHELL_RUN, tainted=True) == "ask"
     assert ask("write_text_file", RiskLevel.WRITE, Capability.FS_WRITE, tainted=True) == "ask"
+    # and what lasts or acts later: a web page must not plant a "memory" or a routine
+    assert ask("remember", RiskLevel.WRITE, Capability.MEMORY, tainted=True) == "ask"
+    assert ask("remember", RiskLevel.WRITE, Capability.MEMORY, tainted=False) == "allow"
+    assert ask("create_routine", RiskLevel.WRITE, Capability.SCHEDULE, tainted=True) == "ask"
 
 
 def test_settings_saved_with_the_old_ask_everything_default_are_upgraded() -> None:

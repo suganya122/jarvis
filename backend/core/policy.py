@@ -27,8 +27,9 @@ REACHES_THE_COMPUTER = frozenset(
 """After reading outside content (a page, a file, command output), steps with these still ask: a
 planted instruction could otherwise run commands, change files, type into the user's apps, or
 leave something behind that acts later. Clicking around in its own browser doesn't ask."""
-LOOSE_REACH = frozenset({Capability.SHELL_RUN, Capability.FS_WRITE})
-"""With full automation, only commands and file changes still ask after reading outside content."""
+LOOSE_REACH = frozenset({Capability.SHELL_RUN, Capability.FS_WRITE, Capability.MEMORY, Capability.SCHEDULE})
+"""With full automation, after reading outside content only commands, file changes and what persists
+or acts later (memory, routines) still ask: those are what a planted instruction goes for."""
 
 
 class Decision(BaseModel):
