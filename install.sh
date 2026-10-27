@@ -201,60 +201,6 @@ if [ "${JARVIS_SKIP_BROWSER:-0}" != "1" ] && ! have_browser; then
   fi
 fi
 
-# macOS ties the microphone, speech and Accessibility permissions to how an app is signed. Signed
-# "ad hoc", every rebuild looks like a new app and the switches in System Settings stop applying.
-# So this Mac gets its own code-signing certificate, made once and used only to sign Jarvis.app,
-# in a keychain of its own (not the login keychain) whose random password is kept beside it, so
-# codesign never stops to ask. macOS doesn't trust it for anything else. Every step has a time
-# limit; if anything fails or stalls, Jarvis.app is signed ad hoc as before.
-SIGNING_NAME="$NAME Local Signing"
-SIGNING_DIR="$PREFIX/signing"
-SIGNING_KEYCHAIN="$SIGNING_DIR/signing.keychain-db"
-timed() { perl -e 'alarm shift; exec @ARGV' "$@"; }  # macOS has no timeout(1)
-signing_identity() {
-  [ "${JARVIS_ADHOC_SIGN:-0}" = "1" ] && return
-  if [ ! -f "$SIGNING_KEYCHAIN" ] || [ ! -f "$SIGNING_DIR/password" ]; then
-    rm -rf "$SIGNING_DIR" && mkdir -p "$SIGNING_DIR" && chmod 700 "$SIGNING_DIR"
-    od -An -N24 -tx1 /dev/urandom | tr -d ' \n' > "$SIGNING_DIR/password" && chmod 600 "$SIGNING_DIR/password"
-    local kpass p12 dir; kpass="$(cat "$SIGNING_DIR/password")"; dir="$(mktemp -d)"
-    p12="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-    cat > "$dir/cert.cnf" <<CNF
-[req]
-distinguished_name = dn
-prompt = no
-x509_extensions = ext
-[dn]
-CN = $SIGNING_NAME
-[ext]
-basicConstraints = critical, CA:false
-keyUsage = critical, digitalSignature
-extendedKeyUsage = critical, codeSigning
-CNF
-    if timed 30 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$dir/cert.cnf" \
-         -keyout "$dir/key.pem" -out "$dir/cert.pem" >/dev/null 2>&1 &&
-       { timed 30 openssl pkcs12 -export -legacy -inkey "$dir/key.pem" -in "$dir/cert.pem" \
-           -name "$SIGNING_NAME" -out "$dir/id.p12" -passout "pass:$p12" >/dev/null 2>&1 ||
-         timed 30 openssl pkcs12 -export -inkey "$dir/key.pem" -in "$dir/cert.pem" \
-           -name "$SIGNING_NAME" -out "$dir/id.p12" -passout "pass:$p12" >/dev/null 2>&1; } &&
-       timed 30 security create-keychain -p "$kpass" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
-       timed 30 security set-keychain-settings "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
-       timed 30 security unlock-keychain -p "$kpass" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 &&
-       timed 30 security import "$dir/id.p12" -k "$SIGNING_KEYCHAIN" -P "$p12" -T /usr/bin/codesign \
-         >/dev/null 2>&1 &&
-       timed 30 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kpass" \
-         "$SIGNING_KEYCHAIN" >/dev/null 2>&1; then
-      say "Made a signing certificate for $NAME.app, so macOS remembers what you've allowed it." >&2
-    else
-      rm -rf "$SIGNING_DIR"
-    fi
-    rm -rf "$dir"
-  fi
-  [ -f "$SIGNING_DIR/password" ] || return
-  timed 30 security unlock-keychain -p "$(cat "$SIGNING_DIR/password")" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || return
-  timed 30 security find-identity -p codesigning "$SIGNING_KEYCHAIN" 2>/dev/null | grep -q "\"$SIGNING_NAME\"" &&
-    echo "$SIGNING_NAME"
-}
-
 # ---- 6. macOS: Jarvis.app (menu bar, ⌃⌥Space, Apple speech), built from the installed sources --
 LAUNCH="$BIN_DIR/jarvis"
 if [ "$OS" = mac ]; then
@@ -263,8 +209,7 @@ if [ "$OS" = mac ]; then
   # macOS ties the microphone, speech and Accessibility permissions to this exact build, so it's
   # only rebuilt when its sources change: an ordinary update keeps what you've allowed.
   STAMP_FILE="$APP/Contents/Resources/build-stamp"
-  IDENTITY="$(signing_identity)"  # part of the stamp: a change of signing means a rebuild
-  STAMP="$(cat "$SRC"/*.swift | sha256 -)-$NAME-$PY-${IDENTITY:-adhoc}"
+  STAMP="$(cat "$SRC"/*.swift | sha256 -)-$NAME-$PY"
   if [ -x "$APP/Contents/MacOS/$NAME" ] && [ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$STAMP" ]; then
     say "$NAME.app is up to date (your permissions stay as they are)."
   else
@@ -290,21 +235,11 @@ if [ "$OS" = mac ]; then
 </dict></plist>
 PLIST
   swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
-  if [ -n "$IDENTITY" ] &&
-     timed 60 codesign --force --keychain "$SIGNING_KEYCHAIN" --sign "$IDENTITY" "$APP" >/dev/null 2>&1; then
-    : # signed with this Mac's own Jarvis certificate: permissions survive rebuilds
-  else
-    IDENTITY="" STAMP="${STAMP%-*}-adhoc"  # what was really used: a later install tries again
-    timed 60 codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
-  fi
+  codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
   printf '%s' "$STAMP" > "$STAMP_FILE"
-  if [ -n "$IDENTITY" ]; then
-    warn "$NAME.app is now signed with this Mac's own certificate. Allow it once more (microphone, speech,"
-    warn "Accessibility: remove Jarvis there with - and add it again with +); after that, updates keep it."
-  else
-    warn "$NAME.app was rebuilt: macOS may ask again for the microphone, speech recognition and Accessibility."
-  fi
+  warn "$NAME.app was rebuilt, so macOS sees a new app: allow it again. Accessibility: in System Settings →"
+  warn "Privacy & Security → Accessibility, remove Jarvis with - and add it again with +, then reopen Jarvis."
   fi
   LAUNCH="$APP/Contents/MacOS/$NAME"
 fi

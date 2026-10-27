@@ -1395,13 +1395,15 @@ speaker on different devices) or starves the mic, it carries on without it and s
 log. The ears worker uses it when `voice.echo_cancel` is on and Jarvis.app is installed; it falls
 back to the plain mic and `say` otherwise. Next: the Kokoro voice played through the same engine.
 
-## D109. macOS: permissions that survive updates, and helpers that recover
+## D109. macOS: helpers that recover; no local signing certificate
 
-Jarvis.app was signed ad hoc, so every rebuild was a new app to macOS: the Accessibility switch
-still showed on, but applied to the old build ("control access isn't on" with it on). The
-installer now makes this Mac its own code-signing certificate once (login keychain, codeSigning
-only, not trusted for anything else) and signs Jarvis.app with it, so rebuilds keep the same
-identity; if that fails it falls back to ad hoc. The signing identity is part of the rebuild stamp.
+Jarvis.app is signed ad hoc, so a rebuild is a new app to macOS: the Accessibility switch still
+shows on but applies to the old build ("control access isn't on" with it on). A local code-signing
+certificate would keep one identity across rebuilds, but its key has to be usable without a prompt,
+so any program running as the user could sign its own binary as Jarvis and inherit Jarvis's
+permissions. The user chose not to have one. So: ad hoc, rebuilt only when the Swift sources
+change (ordinary updates keep permissions), and after a rebuild the installer says to re-add
+Jarvis under Accessibility.
 
 `pkill -x Jarvis` also stops the helpers (same executable), and stopping Jarvis.app from outside
 left the assistant running without them ("Apple speech recognition stopped"). Now Jarvis.app

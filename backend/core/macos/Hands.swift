@@ -64,8 +64,10 @@ final class HandsServer {
             return ["trusted": AXIsProcessTrustedWithOptions(options)]
         }
         guard AXIsProcessTrusted() else {
-            throw HandsError(message: "Jarvis isn't allowed to control this Mac yet: turn on Jarvis in "
-                + "System Settings → Privacy & Security → Accessibility")
+            throw HandsError(message: "Jarvis isn't allowed to control this Mac. In System Settings → Privacy & "
+                + "Security → Accessibility: if Jarvis is there (even switched on, after an update), select it, "
+                + "remove it with the minus button, add it again with + (your Applications folder → Jarvis), then reopen Jarvis; "
+                + "if it isn't there, add it with +")
         }
         switch op {
         case "windows": return windows()

@@ -87,9 +87,12 @@ def _mac_status(env: HandsEnv) -> ToolResult:
         return ToolResult(ok=False, output=f"Window and app control: not available ({exc})", evidence={})
     if not trusted:
         output = (
-            "Window and app control: waiting for permission. Turn on Jarvis in System Settings → "
-            "Privacy & Security → Accessibility (if Jarvis isn't listed, click + and choose "
-            "Applications in your home folder → Jarvis). Screenshots also need Screen Recording for Jarvis."
+            "Window and app control: not allowed. In System Settings → Privacy & Security → "
+            "Accessibility: if Jarvis is listed, even switched on (an update makes it a new app to "
+            "macOS), select it, remove it with the minus button, add it again with + "
+            "(Applications in your home folder → Jarvis), then reopen Jarvis. If it isn't listed, "
+            "add it with +. Screenshots "
+            "also need Screen Recording for Jarvis."
         )
         return ToolResult(ok=False, output=output, evidence={"accessibility": False})
     windows = env.hands.list_windows()
