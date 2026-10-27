@@ -248,7 +248,11 @@ fi
 "$PY" -m core.cli setup-windows || warn "Window placement isn't set up yet; run: jarvis-cli setup-windows"
 "$PY" -m core.cli autostart on --exec "$LAUNCH" >/dev/null || warn "Couldn't set start at login."
 if [ "${JARVIS_SKIP_START:-0}" != "1" ]; then
-  if [ "$OS" = mac ]; then pkill -x "$NAME" 2>/dev/null && sleep 1; fi  # restart on the new version
+  if [ "$OS" = mac ]; then  # restart on the new version, once the old one has really gone
+    pkill -x "$NAME" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -x "$NAME" >/dev/null || break; sleep 1; done
+    pkill -9 -x "$NAME" 2>/dev/null || true
+  fi
   pkill -f "$PREFIX/venv/bin/python -m core" 2>/dev/null || true
   if [ "$OS" = mac ]; then open "$APP"; else nohup "$LAUNCH" > "$PREFIX/jarvis.log" 2>&1 & fi
   say "$NAME is running."

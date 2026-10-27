@@ -95,6 +95,7 @@ def main() -> None:
         ws_max_size=256 * 1024,
         server_header=False,
         log_config=None,
+        timeout_graceful_shutdown=3,  # an open settings page must not keep it from stopping
     )
     server = uvicorn.Server(config)
     server.run()

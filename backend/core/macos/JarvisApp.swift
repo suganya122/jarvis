@@ -86,10 +86,18 @@ final class Daemon {
         }
     }
 
+    /// Asks the assistant to stop and waits at most a few seconds, then makes it. Waiting without
+    /// a limit left Jarvis.app half-quit (its ring dead in the menu bar) whenever the assistant
+    /// was slow to stop, e.g. with the settings page still open in a browser.
     func stop() {
         stopping = true
-        process?.terminate()
-        process?.waitUntilExit()
+        guard let child = process, child.isRunning else { return }
+        child.terminate()
+        let deadline = Date().addingTimeInterval(5)
+        while child.isRunning && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        if child.isRunning { kill(child.processIdentifier, SIGKILL) }
     }
 }
 
@@ -97,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let daemon = Daemon()
     private let hotkey = Hotkey()
     private let terminateSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+    private var quitting = false
     private var statusItem: NSStatusItem!
     private let stateItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause listening", action: #selector(togglePause), keyEquivalent: "")
@@ -124,7 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         daemon.start()
         // Stopped from outside (pkill, an update): close down like Quit, assistant included.
         signal(SIGTERM, SIG_IGN)
-        terminateSignal.setEventHandler { NSApp.terminate(nil) }
+        terminateSignal.setEventHandler { [weak self] in
+            guard let self = self else { exit(0) }
+            if self.quitting { exit(0) }  // asked again while quitting: don't wait any longer
+            self.quitting = true
+            NSApp.terminate(nil)
+        }
         terminateSignal.resume()
         hotkey.onPress = { Assistant.post("/api/voice/command", ["action": "toggle_chat"]) }
         hotkey.onRelease = { Assistant.post("/api/voice/command", ["action": "finish"]) }

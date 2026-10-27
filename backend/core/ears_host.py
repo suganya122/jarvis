@@ -29,7 +29,8 @@ from contracts.ears import (
 from core.line_process import LineProcess
 
 log = logging.getLogger(__name__)
-MAX_RESTARTS_PER_HOUR = 3
+MAX_RESTARTS_PER_HOUR = 10
+"""It restarts itself to recover (e.g. Jarvis.app's audio stopped); past this, something is broken."""
 TEST_HOOKS = ("ASSISTANT_EARS_WAV", "ASSISTANT_EARS_SINK")
 """Tests replace the microphone with WAV files and record speech to a file instead of playing it.
 Child processes don't get `ASSISTANT_*` variables, so these two are passed on by name, here, for
