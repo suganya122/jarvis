@@ -24,7 +24,8 @@ from core.config import Settings
 from core.context import ContextService
 from core.context import render as render_context
 from core.dictation import DictationService
-from core.memory import MemoryStore, render, select
+from core.knowledge import Knowledge
+from core.memory import MemoryStore
 from core.memory_tools import Forget, Recall, Remember
 from core.model_files import BY_ID, ModelFiles, ModelSpec
 from core.notify import Notifier
@@ -81,7 +82,15 @@ class Runtime:
         self.memory = MemoryStore(store.conn)
         self.registry = ToolRegistry()
         self.registry.register(CurrentTime())
-        for memory_tool in (Remember(self.memory), Forget(self.memory), Recall(self.memory)):
+        self.knowledge = Knowledge(
+            store.conn, self.memory, self.provider, lambda: self._settings, store.record_cost
+        )
+        for memory_tool in (
+            Remember(self.memory),
+            Forget(self.memory),
+            Recall(self.memory),
+            *self.knowledge.tools,
+        ):
             self.registry.register(memory_tool)
         for tool in extra_tools:
             self.registry.register(tool)
@@ -98,7 +107,8 @@ class Runtime:
             self.registry,
             executor,
             skills=self.skill_runner,
-            context=self.memory_context,
+            context=self.knowledge.context,
+            on_turn=self.knowledge.learn,
             active=self._active_context,
         )
         self.models = ModelFiles(data_dir / "models")
@@ -170,12 +180,6 @@ class Runtime:
     def _active_context(self, perms: ChatPermissions) -> str:
         pinned = self.context.pinned(perms)
         return render_context(pinned) if pinned else ""
-
-    async def memory_context(self, request: str) -> str:
-        settings = self._settings.memory
-        if not settings.enabled:
-            return ""
-        return render(select(await self.memory.all(), request, settings.max_prompt_chars))
 
     async def update_settings(self, settings: Settings) -> None:
         await self.store.save_settings(settings)

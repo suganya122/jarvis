@@ -20,6 +20,8 @@ class ServerConfig(BaseModel):
     max_concurrent_chats: int = Field(default=3, ge=1, le=10)
 
 
+LEARN_BY_DEFAULT = True
+"""Learn lasting facts from what the user says into the knowledge graph (memory.learn)."""
 FULL_AUTOMATION = True
 """Out of the box it does what it's asked, sending messages included, and asks only before
 paying or deleting (tools.full_automation in Settings turns the stricter behaviour back on)."""
@@ -259,6 +261,12 @@ class MemorySettings(BaseModel):
     """Give saved memories to the model. Off: memories are kept but not used."""
     max_prompt_chars: int = Field(default=3_000, ge=200, le=20_000)
     """Budget per request; past it, the memories sharing the most words with the request win."""
+    graph: bool = True
+    """Give the model what the knowledge graph knows about the people and things in the request."""
+    graph_max_chars: int = Field(default=1_400, ge=200, le=10_000)
+    learn: bool = Field(default_factory=lambda: LEARN_BY_DEFAULT)
+    """Learn lasting facts from what you say (people, places, preferences) into the knowledge graph.
+    Only your own words are read, never web pages or files; you can see, edit and delete it all."""
 
 
 class SpendingSettings(BaseModel):

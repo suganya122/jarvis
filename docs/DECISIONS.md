@@ -1450,3 +1450,36 @@ Every request ran on the smallest model (Haiku, low effort), which follows a mul
 conversation poorly. The default tier is now balanced (Sonnet, medium effort); cheap-first
 escalation still applies when a tier is chosen explicitly. Saved settings that still said "cheap"
 are upgraded once (`defaults_version`); a tier chosen afterwards is kept.
+
+## D113. A knowledge graph of the user's world (learned from their words, checked by code)
+
+Memory was a flat list of notes saved only on "remember that…". The user wants an assistant that
+knows their world (who "my brother" is, how Srinith likes to be messaged) and uses it without
+asking. `core/knowledge/`: entities (person, place, org, app, project, thing) with names and
+aliases; facts from a closed vocabulary of 20 predicates, each one-valued ("lives in": a new value
+supersedes the old, which stays as history) or many-valued; the user is one entity ("self") so "my
+brother" is a relation, not a name. SQLite, no new dependency, no embeddings (a few thousand facts
+and name matching is enough; reconsider if real queries miss).
+
+Retrieval is plain database work, no model call, so no latency before answering: names in the
+request (exact, by part of a name, by consonant skeleton for names the speech recogniser mishears,
+flagged "sounded like… check"), the user's relation words ("my brother", "mom"), their profile and
+closest people, one hop out. A few lines, in the per-request context after the cached system prompt.
+
+Learning runs after the turn, in the background, on the cheap tier: a model reads **only what the
+user said** (the reply is passed only to resolve "he"; tool results, pages and files never are;
+messages over 500 characters, probably pasted, are skipped) and proposes facts as JSON. Code then
+checks each one: predicate in the vocabulary; entity names and text values actually present in
+what the user said; a verbatim quote that is a real substring of it (the check that stops invented
+or injected facts); nothing that looks like a card/phone/ID number, password, email or URL; at most
+6 facts per turn; and nothing the user deleted before. Merging two people is never automatic
+beyond an exact name or a first name that fits exactly one known full name: two entries for one
+person is better than joining two people, and the page has a merge and a rename (the recogniser
+spells names as it hears them).
+
+Forgetting deletes for real and keeps only a fingerprint so it isn't learned again. The model's
+tools: recall_knowledge (read) and forget_knowledge (capability `memory`, so after reading outside
+content it asks: what persists is what a planted instruction goes for; D111 restored that ask for
+memory and routines). Settings: memory.learn, memory.graph. The Knowledge page shows the graph
+(you in the middle), every fact with the words it came from, and forget/rename/merge. Everything
+is in the data export and removed by "delete everything".

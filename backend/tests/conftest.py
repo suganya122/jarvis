@@ -27,6 +27,7 @@ def strict_approvals(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(config, "ASK_FIRST", tuple(c for c in Capability if c is not Capability.FS_READ))
     monkeypatch.setattr(config, "FULL_AUTOMATION", False)
+    monkeypatch.setattr(config, "LEARN_BY_DEFAULT", False)  # it'd add a model call after every turn
 
 
 PORT = 8765

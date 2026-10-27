@@ -102,6 +102,46 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (channel, conversation_id)
     );
     """,
+    # 7: knowledge graph (people, places and what's known about them; see core/knowledge)
+    """
+    CREATE TABLE kg_entity (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        last_seen_at REAL NOT NULL,
+        mentions INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE kg_alias (
+        entity_id TEXT NOT NULL REFERENCES kg_entity(id) ON DELETE CASCADE,
+        alias_norm TEXT NOT NULL,
+        alias_raw TEXT NOT NULL,
+        PRIMARY KEY (entity_id, alias_norm)
+    );
+    CREATE INDEX kg_alias_norm ON kg_alias(alias_norm);
+    CREATE TABLE kg_fact (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL REFERENCES kg_entity(id) ON DELETE CASCADE,
+        predicate TEXT NOT NULL,
+        object_id TEXT REFERENCES kg_entity(id) ON DELETE CASCADE,
+        object_text TEXT,
+        valid_from REAL NOT NULL,
+        recorded_at REAL NOT NULL,
+        superseded_at REAL,
+        superseded_by TEXT,
+        confidence REAL NOT NULL,
+        origin TEXT NOT NULL,
+        quote TEXT NOT NULL DEFAULT '',
+        hits INTEGER NOT NULL DEFAULT 0,
+        last_used_at REAL
+    );
+    CREATE INDEX kg_fact_subject ON kg_fact(subject_id, superseded_at);
+    CREATE INDEX kg_fact_object ON kg_fact(object_id);
+    CREATE TABLE kg_tombstone (
+        key TEXT PRIMARY KEY,
+        created_at REAL NOT NULL
+    );
+    """,
 ]
 
 

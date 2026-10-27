@@ -54,6 +54,38 @@ export interface Memory {
   updated_at: number;
 }
 
+/** One thing Jarvis learned: "prefers contact via: WhatsApp", with the words it came from. */
+export interface KnowledgeFact {
+  id: string;
+  text: string;
+  predicate: string;
+  /** The other person or place, when the fact links two. */
+  object_id: string | null;
+  since: number;
+  /** What you said that it was learned from. */
+  quote: string;
+  /** False once a newer fact replaced it (kept as history). */
+  current: boolean;
+}
+
+export interface KnowledgeEntity {
+  id: string;
+  name: string;
+  type: string;
+  aliases: string[];
+  /** How they are connected to you ("sibling", "parent"…), or "". */
+  relation: string;
+  mentions: number;
+  last_seen_at: number;
+  facts: KnowledgeFact[];
+}
+
+export interface Knowledge {
+  you: KnowledgeFact[];
+  entities: KnowledgeEntity[];
+  counts: { entities: number; facts: number };
+}
+
 export interface PluginField {
   name: string;
   label: string;

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from contracts.model import ChatMessage, Completed, Role, Usage
+from contracts.model import ChatMessage, Completed, ModelTier, Role, Usage
 from core import db
 from core.redact import Redactor
 from core.store import Store
@@ -108,7 +108,7 @@ async def test_settings_saved_with_the_old_cheap_default_move_up_once(tmp_path: 
     await store._conn.commit()
     upgraded = await store.load_settings()
     assert upgraded.default_tier == "balanced"
-    chosen = upgraded.model_copy(update={"default_tier": "cheap"})  # the user's own choice, now
+    chosen = upgraded.model_copy(update={"default_tier": ModelTier.CHEAP})  # the user's own choice, now
     await store.save_settings(chosen)
     assert (await store.load_settings()).default_tier == "cheap"
     await store.close()

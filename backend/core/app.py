@@ -20,6 +20,7 @@ from core.autostart import Autostart
 from core.control_api import router as control_router
 from core.data_api import router as data_router
 from core.data_control import wipe
+from core.knowledge.api import router as knowledge_router
 from core.plugin_api import router as plugin_router
 from core.ratelimit import KeyedLimiter
 from core.redact import Redactor
@@ -114,6 +115,7 @@ def create_app(options: DaemonOptions) -> FastAPI:
     app.include_router(control_router)
     app.include_router(automation_router)
     app.include_router(data_router)
+    app.include_router(knowledge_router)
     app.include_router(plugin_router)
     app.add_api_websocket_route("/ws", chat_socket)
 

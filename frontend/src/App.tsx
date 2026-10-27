@@ -24,6 +24,7 @@ import { AuditPage } from "./components/AuditPage";
 import { SkillsPage } from "./components/SkillsPage";
 import { TasksPage } from "./components/TasksPage";
 import { AutomationsPage } from "./components/AutomationsPage";
+import { KnowledgePage } from "./components/KnowledgePage";
 import { MemoryPage } from "./components/MemoryPage";
 import { Page } from "./components/Page";
 import { RightPanel } from "./components/RightPanel";
@@ -278,6 +279,7 @@ function Main({ token, onUnauthorized }: { token: string; onUnauthorized: () => 
     ),
     automations: <AutomationsPage api={api} onClose={toChat} />,
     memory: <MemoryPage api={api} onClose={toChat} />,
+    knowledge: <KnowledgePage api={api} onClose={toChat} />,
     audit: <AuditPage api={api} onClose={toChat} />,
     settings: (
       <SettingsPage

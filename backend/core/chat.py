@@ -59,7 +59,9 @@ class ChatService(RoutesMixin):
         skills: SkillRunner | None = None,
         context: Callable[[str], Awaitable[str]] | None = None,
         active: Callable[[ChatPermissions], str] | None = None,
+        on_turn: Callable[[str, str], None] | None = None,
     ) -> None:
+        self._on_turn = on_turn
         self._active = active
         self._skills = skills
         self._context = context
@@ -247,6 +249,10 @@ class ChatService(RoutesMixin):
                         cleaned, turn.trace, turn.tainted_before, settings.skills, turn.trace_id
                     )
                 await self._done(send, emit, turn, done.stop_reason, skill=note)
+                if (
+                    self._on_turn and not turn.background and perms.remote is None
+                ):  # learn from what they said
+                    self._on_turn(send.text, assistant.text)
                 return
             turn.pending = Step(assistant, calls)
             if done.stop_reason != "tool_use":  # cut off (max_tokens) or declined: never run

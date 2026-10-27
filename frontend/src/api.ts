@@ -3,6 +3,7 @@ import type {
   AutostartState,
   PluginInfo,
   CostSummary,
+  Knowledge,
   Memory,
   RoutineView,
   TaskInfo,
@@ -145,6 +146,14 @@ export class Api {
   editMemory = (id: string, text: string) =>
     this.request<Memory>("PUT", `/api/memories/${encodeURIComponent(id)}`, { text });
   deleteMemory = (id: string) => this.request<void>("DELETE", `/api/memories/${encodeURIComponent(id)}`);
+  knowledge = (query = "", history = false) =>
+    this.request<Knowledge>("GET", `/api/knowledge?q=${encodeURIComponent(query)}&history=${history}`);
+  deleteKnowledgeFact = (id: string) => this.request<void>("DELETE", `/api/knowledge/facts/${encodeURIComponent(id)}`);
+  deleteKnowledgeEntity = (id: string) =>
+    this.request<void>("DELETE", `/api/knowledge/entities/${encodeURIComponent(id)}`);
+  renameKnowledge = (id: string, name: string) =>
+    this.request<void>("PUT", `/api/knowledge/entities/${encodeURIComponent(id)}`, { name });
+  mergeKnowledge = (keep: string, drop: string) => this.request<void>("POST", "/api/knowledge/merge", { keep, drop });
   autostart = () => this.request<AutostartState>("GET", "/api/autostart");
   setAutostart = (enabled: boolean) => this.request<AutostartState>("PUT", "/api/autostart", { enabled });
   deleteAllData = () => this.request<{ stopping: boolean }>("POST", "/api/data/delete-all", { confirm: "DELETE" });

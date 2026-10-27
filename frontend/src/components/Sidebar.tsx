@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type View = "home" | "chat" | "skills" | "tasks" | "automations" | "memory" | "audit" | "settings" | "overview";
+export type View = "home" | "chat" | "skills" | "tasks" | "automations" | "memory" | "knowledge" | "audit" | "settings" | "overview";
 
 const ITEMS: { view: View; label: string; narrowOnly?: boolean }[] = [
   { view: "home", label: "Voice" },
@@ -9,6 +9,7 @@ const ITEMS: { view: View; label: string; narrowOnly?: boolean }[] = [
   { view: "tasks", label: "Background agents" },
   { view: "automations", label: "Automations" },
   { view: "memory", label: "Memory" },
+  { view: "knowledge", label: "Knowledge" },
   { view: "audit", label: "Audit log" },
   { view: "settings", label: "Settings" },
   { view: "overview", label: "Overview", narrowOnly: true },

@@ -291,6 +291,115 @@ button.danger-link {
   cursor: pointer;
 }
 
+/* ---- knowledge ---- */
+
+.kg-figure {
+  margin: 12px 0;
+}
+
+.kg-graph {
+  width: 100%;
+  height: auto;
+  max-height: 460px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.kg-edge {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.kg-edge-you {
+  stroke: var(--accent);
+}
+
+.kg-edge-loose {
+  stroke-dasharray: 3 4;
+}
+
+.kg-edge-label {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.kg-node circle {
+  fill: var(--surface-2);
+  stroke: var(--text-3);
+  stroke-width: 1.5;
+}
+
+.kg-node text {
+  fill: var(--text);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.kg-node-you circle {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.kg-node-place circle {
+  stroke: var(--warn);
+}
+
+.kg-node-org circle,
+.kg-node-app circle {
+  stroke-dasharray: 4 2;
+}
+
+.kg-node[role="button"] {
+  cursor: pointer;
+}
+
+.kg-node[role="button"]:hover circle,
+.kg-node[role="button"]:focus-visible circle,
+.kg-selected circle {
+  stroke: var(--focus);
+  stroke-width: 3;
+}
+
+.kg-node:focus {
+  outline: none;
+}
+
+.kg-cards,
+.kg-facts {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.kg-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.kg-card-selected {
+  border-color: var(--accent);
+}
+
+.kg-card h3 {
+  margin: 0 0 4px;
+}
+
+.kg-fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.kg-fact-old span:first-child {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
 /* ---- chat apps ---- */
 
 .badge-plugin-connected {

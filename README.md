@@ -71,6 +71,10 @@ microphone) or `wmctrl` is missing. Run the same command again to update. Uninst
   app or an unattended routine. If it can't tell who you mean it asks one short question about
   the name. Settings → Tools → full automation switches the stricter behaviour back on (every send
   asks, and so does app control after reading outside content).
+- **Knowledge:** it learns the people, places and preferences in your life from what you tell it
+  ("my brother Srinith prefers WhatsApp") and uses them without asking again. It reads only your
+  own words, never web pages or files, and never keeps passwords or card or phone numbers. See,
+  correct, rename or forget everything on the **Knowledge** page; "forget Srinith" works by voice.
 - **Interrupting:** say "wait", "stop" or "no" while it talks, or just start talking.
 - **Privacy:** speech is recognised on this computer. What you say is thrown away unless it
   starts with the wake word. **Pause everything** closes the microphone.
