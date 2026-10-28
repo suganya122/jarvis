@@ -19,6 +19,7 @@ final class AudioServer {
     private var echoCancel = false
     private var listening = false
     private var lastInput = Date()
+    private var restarts = 0  // quiet checks in a row that found no sound arriving
     private var block: [Int16] = []
     private var resampleAt = 0.0  // position in the input stream, in input frames
 
@@ -55,11 +56,16 @@ final class AudioServer {
         } catch {
             note("echo cancellation is off: \(error.localizedDescription)")
         }
-        installTap()
-        do {
-            try engine.start()
-        } catch {
-            fallBack("couldn't start audio: \(error.localizedDescription)")
+        // macOS stops the engine itself when the audio hardware changes (a device connects, the Mac
+        // wakes, the sound settings change): the microphone has to come back by itself.
+        NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
+                                               queue: .main) { [weak self] _ in
+            self?.note("the audio hardware changed; restarting audio")
+            self?.startEngine()
+        }
+        if !startEngine() {
+            dropVoiceProcessing("couldn't start audio")
+            startEngine()
         }
         emit(["type": "ready", "echo_cancel": echoCancel, "microphone": Self.inputName(),
               "detail": echoCancel ? "echo cancellation on" : "echo cancellation off"])
@@ -74,29 +80,49 @@ final class AudioServer {
         }
     }
 
+    /// (Re)starts capture: a fresh tap on the input in its current format, and the engine running.
+    @discardableResult
+    private func startEngine() -> Bool {
+        engine.stop()
+        installTap()
+        do {
+            try engine.start()
+            return true
+        } catch {
+            note("couldn't start audio: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Voice processing failed or starved the microphone: carry on without it (the worker's
     /// transcript check still tells its own voice apart, just less surely).
-    private func fallBack(_ why: String) {
-        guard echoCancel else { return note(why) }
+    private func dropVoiceProcessing(_ why: String) {
+        guard echoCancel else { return }
         note("\(why); continuing without echo cancellation")
         engine.stop()
         try? engine.inputNode.setVoiceProcessingEnabled(false)
         echoCancel = false
-        installTap()
-        try? engine.start()
     }
 
+    /// Every second: if the engine has stopped, or nothing has arrived from the microphone for a
+    /// few seconds, start it again. After a few tries without sound give up echo cancellation, and
+    /// after more than that exit, so the ears worker starts a fresh helper. Never stay deaf.
     private func watchdog() {
-        if listening && Date().timeIntervalSince(lastInput) > 3 {
-            lastInput = Date()
-            fallBack("the microphone went quiet")
-        }
+        let silent = Date().timeIntervalSince(lastInput) > 3
+        guard !engine.isRunning || (listening && silent) else { return }
+        lastInput = Date()  // give the restart a few seconds to produce sound
+        restarts += 1
+        if restarts > 6 { exit(2) }
+        if restarts == 3 { dropVoiceProcessing("the microphone keeps going quiet") }
+        note("the microphone went quiet; restarting audio (\(restarts))")
+        startEngine()
     }
 
     // ---- the microphone -------------------------------------------------------------------
 
     private func capture(_ buffer: AVAudioPCMBuffer) {
         lastInput = Date()
+        restarts = 0
         guard listening, let channel = buffer.floatChannelData?[0] else { return }
         // channel 0 only: with voice processing the input can arrive as copies on several channels
         let rate = buffer.format.sampleRate
@@ -218,6 +244,7 @@ final class AudioServer {
         switch type {
         case "listen":
             listening = (m["on"] as? Bool) ?? false
+            if listening && !engine.isRunning { startEngine() }
             lastInput = Date()
             block.removeAll()
         case "say": say((m["id"] as? String) ?? "", (m["text"] as? String) ?? "")

@@ -1483,3 +1483,13 @@ content it asks: what persists is what a planted instruction goes for; D111 rest
 memory and routines). Settings: memory.learn, memory.graph. The Knowledge page shows the graph
 (you in the middle), every fact with the words it came from, and forget/rename/merge. Everything
 is in the data export and removed by "delete everything".
+
+## D114. The audio engine must never stay deaf
+
+After a while (once macOS changed the audio hardware: a device connecting, the Mac waking, the
+sound settings) the engine in Jarvis.app's `--audio` helper stopped itself. The first stop was
+handled (it fell back from voice processing); every later one only wrote a log line, so Jarvis
+stayed alive, its ring in the menu bar, with no microphone (the orange dot gone). Now: the engine
+restarts on AVAudioEngineConfigurationChange; a watchdog restarts it every time it has stopped or
+nothing has arrived for 3 s while listening; it gives up voice processing after 3 tries without
+sound; past 6 it exits, and the ears worker (which restarts itself) starts a fresh helper.
