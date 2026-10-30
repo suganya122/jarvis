@@ -25,6 +25,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 MAX_ROUNDS = 8
+SAY_WITHIN_S = 600.0
+WAIT_FOR_PAUSE_S = 30.0
+"""A check waits this long for a pause in the conversation before it's left to the next look."""
+ANNOUNCE = "announce:"
+"""How long news waits for a pause in the conversation before it's left on screen only."""
 
 
 class Host(Protocol):
@@ -93,7 +98,11 @@ class Reviewer:
 
     async def review(self, project: Project) -> None:
         """One round. Returns at once if it has to wait (the user is busy, or it's paused)."""
-        if not self._host.can_follow_up():
+        for _ in range(int(WAIT_FOR_PAUSE_S / 0.5)):
+            if self._host.can_follow_up():
+                break
+            await asyncio.sleep(0.5)
+        else:
             return  # still due: the watcher offers it again on its next look
         if project.rounds >= MAX_ROUNDS:
             stuck = f"I've checked {project.name} {MAX_ROUNDS} times and it still isn't right; it needs you."
@@ -154,13 +163,16 @@ class RuntimeHost:
         return self._rt.chat
 
     def _idle_voice(self) -> bool:
-        """Not in a spoken conversation: waiting for the wake word, or hands-free is off."""
+        """Not hearing them or busy with a request: waiting for the wake word, off, or in a live
+        conversation with nobody talking (see HandsFree.free)."""
         loop = self._rt.voice_loop
-        return loop is None or loop.loop.state in ("idle", "off")
+        return loop is None or loop.loop.free()
 
     def can_follow_up(self) -> bool:
         me = asyncio.current_task()
-        turns = any(not t.done() and t is not me for t in self._rt._tasks)  # a typed chat, a chat app
+        turns = any(  # a typed chat, a chat app; not Jarvis's own news being said
+            not t.done() and t is not me and not t.get_name().startswith(ANNOUNCE) for t in self._rt._tasks
+        )
         return not self._rt.paused and self._idle_voice() and not turns
 
     def track(self, task: "asyncio.Task[None]") -> None:
@@ -170,8 +182,19 @@ class RuntimeHost:
         await self._rt.broadcast(message)
 
     async def tell(self, title: str, said: str) -> None:
-        """On screen (and as a desktop notification), and aloud when Jarvis isn't mid-conversation."""
+        """On screen (and as a desktop notification) at once, and aloud as soon as Jarvis is free:
+        if they're talking to it right then, it waits for them to finish rather than not say it."""
         await self._rt.notifier.notify(title, said[:500], "task")
-        loop = self._rt.voice_loop
-        if loop is not None and loop.loop.state == "idle":
-            await loop.say(said)
+        if self._rt.voice_loop is not None:
+            self._rt.track(asyncio.create_task(self._say_when_free(said), name=f"{ANNOUNCE}{title}"))
+
+    async def _say_when_free(self, said: str) -> None:
+        for _ in range(int(SAY_WITHIN_S / 0.5)):
+            loop = self._rt.voice_loop
+            if loop is None:
+                return
+            if loop.loop.free() and not self._rt.paused:
+                await loop.say(said)
+                return
+            await asyncio.sleep(0.5)
+        log.info("never free to say it aloud; it's on screen")

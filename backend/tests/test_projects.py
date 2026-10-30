@@ -136,7 +136,12 @@ async def test_a_project_is_understood_step_by_step_and_never_forgotten(conn: An
     assert await rig.projects.context() == ""  # done: no longer carried along
 
 
-async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(conn: Any) -> None:
+async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(
+    conn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.projects import review
+
+    monkeypatch.setattr(review, "WAIT_FOR_PAUSE_S", 0.5)
     working, idle = "e4  button 'Stop response'", "No matching controls."
     rig = Rig(conn, [LISTING], [working, working, idle, idle])
     rig.projects.watcher.start = lambda: None  # type: ignore[method-assign]
@@ -305,3 +310,123 @@ def test_the_working_sign_is_a_control_not_the_title() -> None:
     assert not shows("e1  button 'Stopwatch'", "Stop")
     assert not shows("No matching controls.", "Stop")
     assert shows("e1  text area 'shell' text='✻ Working… (12s · esc to interrupt)'", "esc to interrupt")
+
+
+# ---- the whole chain, with the real voice loop in live mode ---------------------------------
+
+
+class LiveRuntime:
+    """The bits of core.runtime.Runtime that RuntimeHost reads, around a real hands-free loop."""
+
+    def __init__(self, hf: Any) -> None:
+        from types import SimpleNamespace
+
+        self.paused = False
+        self._tasks: set[Any] = set()
+        self.voice_loop = SimpleNamespace(loop=hf, say=hf.say_now)
+        self.notified: list[tuple[str, str]] = []
+        self.sends: list[ChatSend] = []
+        rt = self
+
+        class Notifier:
+            async def notify(self, title: str, body: str, kind: str, **_: Any) -> None:
+                rt.notified.append((title, body))
+
+        class Store:
+            async def ensure_session(self, session_id: str | None, first_text: str) -> str:
+                return session_id or "project-session"
+
+        class Chat:
+            async def run(self, send: ChatSend, emit: Any, *_: Any, **__: Any) -> None:
+                rt.sends.append(send)
+                await emit(
+                    ChatDelta(
+                        request_id=send.request_id,
+                        text="Claude built it; I've asked it to test and polish it.",
+                    )
+                )
+
+        self.notifier, self.store, self.chat = Notifier(), Store(), Chat()
+
+    def track(self, task: Any) -> None:
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def broadcast(self, message: Any) -> None:
+        return None
+
+
+def test_in_a_live_conversation_it_says_when_claude_stops_and_checks_the_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug: live mode sits in "listening", which the watcher took for busy, so it never spoke
+    and never started checking. Real hands-free loop (live), real watcher, check and speaking."""
+    from core.projects.review import RuntimeHost
+    from tests.test_hands_free import Rig as VoiceRig
+
+    async def go() -> None:
+        voice = VoiceRig(monkeypatch, live=True)
+        conn = await db.connect(tmp_path / "p.sqlite3")
+        try:
+            registry = ToolRegistry()
+            working, idle = "e4  button 'Stop response'", "No matching controls."
+            registry.register(Scripted("list_windows", [LISTING]))
+            registry.register(Scripted("find_elements", [working, idle, idle]))
+            rt = LiveRuntime(voice.hf)
+            projects = Projects(conn, registry, RuntimeHost(rt))  # type: ignore[arg-type]
+            projects.watcher.start = lambda: None  # type: ignore[method-assign]  # polled by hand below
+            save = registry.get("save_project")
+            assert save is not None
+            await save.run({"name": "Bakery website", "status": "sent", "built_with": "Claude",
+                            "watch_window": "Claude", "working_marker": "Stop"}, CTX)  # fmt: skip
+            async with voice.running():
+                await voice.speak("jarvis hello")
+                await voice.until(lambda: voice.ears.said == ["It is noon."])
+                await voice.until(
+                    lambda: voice.hf.state == "listening" and voice.hf.free()
+                )  # live, nobody talking
+                for _ in range(3):  # working, then stopped twice
+                    await projects.watcher.poll()
+                await voice.until(lambda: len(rt.sends) == 1)  # the check started at once
+                await voice.until(lambda: len(voice.ears.said) >= 3)
+                assert (
+                    voice.ears.said[1] == "Claude has stopped on Bakery website. I'm checking the work now."
+                )
+                assert voice.ears.said[2] == "Claude built it; I've asked it to test and polish it."
+                assert "round 1:" in rt.sends[0].text
+        finally:
+            if "projects" in locals():
+                await projects.watcher.stop()
+            for task in list(getattr(locals().get("rt"), "_tasks", ())):
+                task.cancel()
+            await conn.close()
+
+    asyncio.run(go())
+
+
+def test_if_they_are_talking_when_it_finishes_it_waits_for_them_then_says_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.projects.review import RuntimeHost
+    from tests.test_hands_free import Rig as VoiceRig
+
+    async def go() -> None:
+        voice = VoiceRig(monkeypatch, live=True)
+        rt = LiveRuntime(voice.hf)
+        host = RuntimeHost(rt)  # type: ignore[arg-type]
+        async with voice.running():
+            await voice.speak("jarvis hello")
+            await voice.until(lambda: voice.ears.said == ["It is noon."])
+            voice.hf._heard_at = voice.hf._d.clock()  # they've just started saying something
+            assert not voice.hf.free() and not host.can_follow_up()
+            await host.tell("Bakery website", "Claude has stopped on Bakery website.")
+            await asyncio.sleep(0.5)
+            assert voice.ears.said == ["It is noon."]  # not over them
+            assert rt.notified == [
+                ("Bakery website", "Claude has stopped on Bakery website.")
+            ]  # on screen at once
+            voice.hf._heard_at = float("-inf")  # they've finished
+            await voice.until(lambda: voice.ears.said[-1] == "Claude has stopped on Bakery website.")
+        await asyncio.gather(*rt._tasks, return_exceptions=True)
+
+    asyncio.run(go())

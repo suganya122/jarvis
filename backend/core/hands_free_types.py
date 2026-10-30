@@ -30,6 +30,8 @@ Once addressed (live, follow-ups, yes/no) everything is sent."""
 GATE_HANG_S = 1.0
 PREROLL_FRAMES = 5
 QUIET_FOR_S = 0.8
+HEARD_RECENTLY_S = 3.0
+"""Words heard this recently mean the person is mid-sentence: nothing else may speak or start."""
 SPEAK_TAIL_S = 0.5
 SESSION_TTL_S = 600.0
 ECHO_TAIL_S = 1.5

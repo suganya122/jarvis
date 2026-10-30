@@ -21,6 +21,7 @@ from core.hands_free_types import (
     ECHO_CHARS,
     ECHO_TAIL_S,
     ECHO_WINDOW_S,
+    HEARD_RECENTLY_S,
     SESSION_TTL_S,
     HandsFreeDeps,
     HandsFreeState,
@@ -54,6 +55,8 @@ class TurnsMixin:
     _speaking: bool
     _barge: BargeIn | None
     _saying: str
+    _heard_at: float = float("-inf")
+    """When the person's words last came in: they're talking to it, so it's not free."""
     _carry: str = ""
     """The words of a request that was cut off before it answered: the start of the next one."""
     _lead_in: list[str]
@@ -85,6 +88,16 @@ class TurnsMixin:
     def finish_now(self) -> None:
         """The talk key was let go: what was said so far is the request, no silence wait."""
         self._inbox.put_nowait(("finish", None))
+
+    def free(self) -> bool:
+        """Can something else have a turn now: a project's news said aloud, a check of its work
+        started? Yes while waiting for the wake word or switched off, and in a live conversation
+        while nobody is talking and no request is running (live mode sits in "listening" for as
+        long as it lasts, so "listening" alone doesn't mean busy)."""
+        if self.state in ("idle", "off"):
+            return True
+        quiet = self._d.clock() - self._heard_at > HEARD_RECENTLY_S
+        return self.state == "listening" and quiet and self._turn_task is None and not self._speaking
 
     def wake_now(self) -> None:
         """The voice shortcut: start a conversation as if the wake word had been said."""

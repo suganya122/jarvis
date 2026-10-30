@@ -354,7 +354,7 @@ class HandsFree(TurnsMixin):
             self._consuming = False
 
     async def _show_heard(self, text: str) -> None:
-        self.state = "listening"
+        self.state, self._heard_at = "listening", self._d.clock()  # they're talking (see free())
         await self._d.screen.voice_show("listening", partial=text, status="Listening…")
 
     async def _finish(self, stream: str, fallback: str, said: Transcript) -> str:
