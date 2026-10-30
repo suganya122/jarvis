@@ -37,6 +37,7 @@ from core.hands_free_types import (
     SPEAK_TAIL_S,
     SPECULATE_PAUSE_S,
     STALLED_EXTRA_S,
+    TALKING_S,
     TICK_S,
     HandsFreeDeps,
     HandsFreeState,
@@ -44,6 +45,7 @@ from core.hands_free_types import (
 )
 from core.speech_text import (
     could_be_wake,
+    end_of_speech_s,
     is_end_phrase,
     is_filler,
     is_go_offline,
@@ -317,9 +319,9 @@ class HandsFree(TurnsMixin):
                                 return None  # someone else's conversation
                         if addressed:
                             await self._show_heard(text)
-                if text and (
-                    now - last_sound >= silence_s or now - last_change >= silence_s + STALLED_EXTRA_S
-                ):
+                pause = end_of_speech_s(text, silence_s)
+                stalled = pause + STALLED_EXTRA_S + (pause if now - last_sound < TALKING_S else 0.0)
+                if text and (now - last_sound >= pause or now - last_change >= stalled):
                     final = await self._finish(stream, text)
                     break
                 if not text and first_word_s is not None and now - started >= first_word_s:

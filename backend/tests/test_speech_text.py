@@ -5,6 +5,7 @@ import pytest
 
 from core.speech_text import (
     could_be_wake,
+    end_of_speech_s,
     is_barge_in,
     is_end_phrase,
     is_hold,
@@ -272,3 +273,12 @@ def test_a_long_stretch_of_its_own_last_words_is_still_removed() -> None:
     question = "Click The Weeknd, Blinding Lights, 4 minutes, 23 seconds on youtube. Say yes or no."
     assert without_echo("say yes or no yes", question) == "yes"  # its tail, then the answer
     assert without_echo("23 seconds on youtube say yes or no", question) == ""  # nothing but its echo
+
+
+def test_a_long_or_unfinished_sentence_gets_a_longer_pause() -> None:
+    assert end_of_speech_s("what time is it", 2.0) == 2.0
+    assert end_of_speech_s("open my calendar and", 2.0) == 4.0  # still thinking
+    assert end_of_speech_s("send a message to the", 2.0) == 4.0
+    long = "please find the email from my manager about the project review and reply that I agree"
+    assert end_of_speech_s(long, 2.0) == 3.0
+    assert end_of_speech_s("", 2.0) == 2.0

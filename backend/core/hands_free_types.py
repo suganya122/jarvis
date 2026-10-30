@@ -19,6 +19,9 @@ room the learned background (NoiseFloor) raises it. Kept low: a MacBook's built-
 hears ordinary speech at only about 0.1-0.3."""
 STALLED_EXTRA_S = 1.0
 """Noisy rooms never go quiet: this long after the words stop changing also ends a request."""
+TALKING_S = 0.5
+"""Sound within this long counts as them still talking. Then words that stop changing may only be
+the recogniser lagging, not the end: the stalled limit gets one more pause's length."""
 ROTATE_S = 60.0
 GATE_LEVEL = 0.06
 """While only waiting for the wake word, audio below this (about -58 dBFS) isn't sent to the speech

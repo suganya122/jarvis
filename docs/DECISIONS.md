@@ -1506,3 +1506,11 @@ those that describe how to work. Showing the user a page means their own browser
 assistant's browser is for work behind the scenes. Learning now covers more of the user's life
 (projects, studies, home town, languages, goals), and spoken replies are cut at 600 characters
 without saying so.
+
+## D116. A long request isn't cut off by a pause to think
+
+A request ended after `silence_s` (2 s) of quiet, or 1 s after that once the words stopped
+changing, even with the person still audibly talking. Long requests tripped both: people stop to
+think mid-sentence, and the recogniser's text lags. Now the pause that ends it is 1.5× once they've
+said 12 words or more, 2× when the last word leaves the sentence open ("…and", "…the", "um"), and
+while there is still sound the stalled limit gets one more pause's length.

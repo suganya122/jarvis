@@ -35,6 +35,23 @@ def words(text: str) -> list[str]:
     return re.sub(r"[^a-z0-9\s]", "", text.lower()).split()  # apostrophes drop out too
 
 
+LONG_WORDS = 12
+UNFINISHED = frozenset(
+    "and but or so because cause to the a an of for with that which who if then when about um uh uhm "
+    "er like my your our his her their also plus".split()
+)
+"""A pause after one of these ("…and", "…the") is someone thinking, not someone who has finished."""
+
+
+def end_of_speech_s(text: str, silence_s: float) -> float:
+    """How long a pause ends what they're saying. Longer once they've said a lot (people stop to
+    think in a long request), and twice as long when the last word leaves the sentence open."""
+    said = words(text)
+    if said and said[-1] in UNFINISHED:
+        return silence_s * 2
+    return silence_s * 1.5 if len(said) >= LONG_WORDS else silence_s
+
+
 def _similar(a: str, b: str, threshold: float) -> bool:
     return a == b or SequenceMatcher(None, a, b).ratio() >= threshold
 

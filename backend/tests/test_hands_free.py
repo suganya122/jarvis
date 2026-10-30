@@ -618,6 +618,20 @@ def test_wait_just_makes_it_listen(monkeypatch: pytest.MonkeyPatch) -> None:
     asyncio.run(run())
 
 
+def test_a_thinking_pause_in_a_long_request_does_not_cut_it_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        async with rig.running():
+            await rig.speak("jarvis send a message to srinith and")
+            await asyncio.sleep(0.22)  # past the 0.15 s pause, but the sentence was left open
+            assert rig.turns == []
+            await rig.speak("jarvis send a message to srinith and tell him i will be late today")
+            await rig.until(lambda: rig.ears.said == ["It is noon."])
+            assert rig.turns == [("send a message to srinith and tell him i will be late today", None)]
+
+    asyncio.run(run())
+
+
 def test_the_cut_in_listeners_transcripts_reach_the_voice_loop() -> None:
     """The daemon routes transcripts by stream name: the cut-in listener's must come back to it
     (they once went to the chat window's dictation instead, so "wait" was never heard)."""
