@@ -557,7 +557,7 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Quick check:
+Quick check:
 
 ```bash
 cd backend && .venv/bin/pytest && .venv/bin/ruff check . && .venv/bin/mypy
