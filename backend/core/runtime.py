@@ -34,7 +34,7 @@ from core.overlay import OverlayController
 from core.overlay_host import OverlayHost
 from core.overlay_tasks import TaskChips
 from core.plugin_manager import PluginManager
-from core.projects import Projects
+from core.projects import Projects, RuntimeHost
 from core.providers import build_provider
 from core.redact import Redactor
 from core.schedule import local_now
@@ -91,7 +91,7 @@ class Runtime:
         for tool in [*tools, *self.knowledge.tools, *extra_tools]:
             self.registry.register(tool)
         self.abilities = Abilities(data_dir / "abilities", self.registry, self.provider, store.record_cost)
-        self.projects = Projects(store.conn, self.registry, lambda: self.notifier, self._announce)
+        self.projects = Projects(store.conn, self.registry, RuntimeHost(self))
         self.approvals = ApprovalBroker()
         executor = ToolExecutor(self.registry, self.approvals, store, lambda: self._settings)
         self.context = ContextService(self.registry, lambda: self._settings, store)

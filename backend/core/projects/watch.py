@@ -2,14 +2,16 @@
 
 Every POLL_S it finds the window (by part of its title) and looks for the control that shows only
 while that AI is working (Claude and ChatGPT show "Stop"). Seen working and then gone twice in a
-row: it has answered, and the user is told, by voice when Jarvis is listening and on screen."""
+row: it has stopped, the user is told (aloud when Jarvis is free, and on screen), and Jarvis
+checks the work (core.projects.review), which may send it back for fixes and watch again."""
 
 import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
+from typing import Any
 
 from contracts.common import Trust
 from contracts.tools import ToolContext
@@ -26,6 +28,7 @@ MISSING_AFTER = 3
 GIVE_UP_S = 3 * 3600.0
 
 Tell = Callable[[str, str], Awaitable[None]]
+Review = Callable[[Project], Coroutine[Any, Any, bool]]
 
 
 @dataclass(slots=True)
@@ -48,13 +51,22 @@ def find_window(listing: str, wanted: str) -> str | None:
 
 class ProjectWatcher:
     def __init__(
-        self, store: ProjectStore, registry: ToolRegistry, tell: Tell, poll_s: float = POLL_S
+        self,
+        store: ProjectStore,
+        registry: ToolRegistry,
+        tell: Tell,
+        review: Review | None = None,
+        rounds: int = 0,
+        poll_s: float = POLL_S,
     ) -> None:
         self._store = store
         self._registry = registry
         self._tell = tell
+        self._review = review
+        self._rounds = rounds
         self._poll_s = poll_s
         self._watches: dict[str, Watch] = {}
+        self._reviewing: dict[str, asyncio.Task[bool]] = {}
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -62,11 +74,13 @@ class ProjectWatcher:
             self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
+        for task in [self._task, *self._reviewing.values()]:
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        self._task = None
+        self._reviewing.clear()
 
     async def _loop(self) -> None:
         while True:
@@ -79,8 +93,12 @@ class ProjectWatcher:
             await asyncio.sleep(self._poll_s)
 
     async def poll(self) -> None:
-        """One look at every project another AI is working on."""
-        watched = [p for p in await self._store.active() if p.status in WATCHED and p.watch_window]
+        """One look at every project another AI is working on, and the checks that are due."""
+        active = await self._store.active()
+        for project in active:
+            if project.review_due and project.status not in WATCHED:
+                self._start_review(project)
+        watched = [p for p in active if p.status in WATCHED and p.watch_window]
         for gone in set(self._watches) - {p.id for p in watched}:
             del self._watches[gone]
         for project in watched:
@@ -117,8 +135,9 @@ class ProjectWatcher:
         if working:
             watch.seen_working, watch.idle = True, 0
             if project.status != "working":
-                project.status, project.detail = "working", f"{project.built_with or 'It'} is working on it."
-                await self._store.save(project)
+                await self._store.update(
+                    project, status="working", detail=f"{project.built_with or 'It'} is working on it."
+                )
             return
         watch.idle += 1
         who = project.built_with or "It"
@@ -134,7 +153,17 @@ class ProjectWatcher:
             )
 
     async def _finish(self, project: Project, status: str, said: str) -> None:
-        project.status, project.detail = status, said
-        await self._store.save(project)
+        checking = status == "answered" and self._review is not None and project.rounds < self._rounds
+        if checking:
+            said = f"{said.split(':')[0].rstrip('.')}. I'm checking the work now."
+        await self._store.update(project, status=status, detail=said, review_due=checking)
         self._watches.pop(project.id, None)
         await self._tell(project.name, said)
+        if checking:
+            self._start_review(project)
+
+    def _start_review(self, project: Project) -> None:
+        running = self._reviewing.get(project.id)
+        if self._review is None or (running is not None and not running.done()):
+            return
+        self._reviewing[project.id] = asyncio.create_task(self._review(project))

@@ -1,10 +1,11 @@
 """Projects: something the user is building or working out with another AI (Claude, Claude Code,
 ChatGPT…), from the first idea to the answer.
 
-    store  one row per project: the idea, what was understood by asking, the brief, where it went
-    tools  save_project and project_status, for the model
-    watch  while the other AI works, its window is checked in the background (no model calls), and
-           the user is told when it has answered
+    store   one row per project: the idea, what was understood by asking, the brief, where it went
+    tools   save_project and project_status, for the model
+    watch   while the other AI works, its window is checked in the background (no model calls), and
+            the user is told when it stops
+    review  then Jarvis checks the work and has it fixed and polished, in a few rounds
 
 Unfinished projects are in the model's context on every request, so other requests in between,
 or a new conversation, don't make it forget one.
@@ -14,7 +15,7 @@ from collections.abc import Awaitable, Callable
 
 import aiosqlite
 
-from core.notify import Notifier
+from core.projects.review import MAX_ROUNDS, Host, Reviewer, RuntimeHost
 from core.projects.store import ProjectStore
 from core.projects.tools import ProjectStatus, SaveProject, describe
 from core.projects.watch import ProjectWatcher
@@ -28,21 +29,15 @@ MAX_SHOWN = 5
 MAX_CHARS = 4_000
 
 ContextFn = Callable[[str], Awaitable[str]]
+__all__ = ["Projects", "RuntimeHost"]
 
 
 class Projects:
-    def __init__(
-        self,
-        conn: aiosqlite.Connection,
-        registry: ToolRegistry,
-        notifier: Callable[[], Notifier],
-        speak: Callable[[str], Awaitable[None]],
-    ) -> None:
+    def __init__(self, conn: aiosqlite.Connection, registry: ToolRegistry, host: Host) -> None:
         self.store = ProjectStore(conn)
-        self._notifier = notifier
-        self._speak = speak
-        self.watcher = ProjectWatcher(self.store, registry, self._tell)
-        for tool in (SaveProject(self.store, self.watcher.start), ProjectStatus(self.store)):
+        reviewer = Reviewer(self.store, host)
+        self.watcher = ProjectWatcher(self.store, registry, host.tell, reviewer.review, MAX_ROUNDS)
+        for tool in (SaveProject(self.store, lambda: self.watcher.start()), ProjectStatus(self.store)):
             registry.register(tool)
 
     async def context(self) -> str:
@@ -61,11 +56,6 @@ class Projects:
             return "\n\n".join(p for p in parts if p)
 
         return with_projects
-
-    async def _tell(self, name: str, said: str) -> None:
-        """On screen (and as a desktop notification), and aloud when Jarvis isn't mid-conversation."""
-        await self._notifier().notify(name, said, "task")
-        await self._speak(said)
 
     def start(self) -> None:
         self.watcher.start()

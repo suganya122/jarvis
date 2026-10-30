@@ -8,14 +8,14 @@ from typing import Literal, get_args
 
 import aiosqlite
 
-Status = Literal["understanding", "ready", "sent", "working", "answered", "paused", "done"]
+Status = Literal["understanding", "ready", "sent", "working", "answered", "reviewing", "paused", "done"]
 STATUSES: tuple[str, ...] = get_args(Status)
 WATCHED = ("sent", "working")
 """While the other AI has it: the background watcher looks at its window."""
 MAX_LEARNED = 60
 COLUMNS = (
     "id, name, idea, learned, brief, built_with, watch_window, working_marker, status, detail, created_at, "
-    "updated_at"
+    "updated_at, rounds, review_due, session_id"
 )
 
 
@@ -33,6 +33,11 @@ class Project:
     detail: str = ""
     created_at: float = 0.0
     updated_at: float = 0.0
+    rounds: int = 0
+    """Times Jarvis has checked the result and had it fixed (see core.projects.review)."""
+    review_due: bool = False
+    session_id: str = ""
+    """The conversation the checks run in, so each round knows the last."""
 
 
 def _row(row: aiosqlite.Row) -> Project:
@@ -49,6 +54,9 @@ def _row(row: aiosqlite.Row) -> Project:
         detail=row["detail"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        rounds=row["rounds"],
+        review_due=bool(row["review_due"]),
+        session_id=row["session_id"],
     )
 
 
@@ -62,7 +70,7 @@ class ProjectStore:
             uuid.uuid4().hex[:12], name.strip(), idea.strip(), "understanding", created_at=now, updated_at=now
         )
         await self._conn.execute(
-            f"INSERT INTO projects ({COLUMNS}) VALUES (?, ?, ?, '[]', '', '', '', '', ?, '', ?, ?)",  # noqa: S608
+            f"INSERT INTO projects ({COLUMNS}) VALUES (?, ?, ?, '[]', '', '', '', '', ?, '', ?, ?, 0, 0, '')",  # noqa: S608
             (project.id, project.name, project.idea, project.status, now, now),
         )
         await self._conn.commit()
@@ -73,13 +81,30 @@ class ProjectStore:
         project.learned = project.learned[-MAX_LEARNED:]
         await self._conn.execute(
             "UPDATE projects SET name=?, idea=?, learned=?, brief=?, built_with=?, watch_window=?, "
-            "working_marker=?, status=?, detail=?, updated_at=? WHERE id=?",
+            "working_marker=?, status=?, detail=?, updated_at=?, rounds=?, review_due=?, session_id=? "
+            "WHERE id=?",
             (
                 project.name, project.idea, json.dumps(project.learned), project.brief, project.built_with,
                 project.watch_window, project.working_marker, project.status, project.detail,
-                project.updated_at, project.id,
+                project.updated_at, project.rounds, int(project.review_due), project.session_id, project.id,
             ),
         )  # fmt: skip
+        await self._conn.commit()
+
+    async def update(self, project: Project, **fields: object) -> None:
+        """Change only these fields (in the database and on `project`), so the watcher and a check
+        never write back an older copy over what the model saved meanwhile."""
+        allowed = {"status", "detail", "rounds", "review_due", "session_id"}
+        assert set(fields) <= allowed, set(fields) - allowed
+        for key, value in fields.items():
+            setattr(project, key, value)
+        project.updated_at = time.time()
+        sets = ", ".join(f"{key}=?" for key in fields)
+        values = [int(v) if isinstance(v, bool) else v for v in fields.values()]
+        await self._conn.execute(
+            f"UPDATE projects SET {sets}, updated_at=? WHERE id=?",  # noqa: S608 - keys from the set above
+            (*values, project.updated_at, project.id),
+        )
         await self._conn.commit()
 
     async def all(self) -> list[Project]:

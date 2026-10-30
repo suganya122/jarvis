@@ -159,6 +159,12 @@ MIGRATIONS: list[str] = [
         updated_at REAL NOT NULL
     );
     """,
+    # 9: projects are checked and fixed in rounds after the other AI stops
+    """
+    ALTER TABLE projects ADD COLUMN rounds INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN review_due INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 
