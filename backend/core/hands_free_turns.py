@@ -203,11 +203,10 @@ class TurnsMixin:
                 if self._cut_in():
                     continue  # talked over: say nothing more of this reply
                 if spoken["chars"] >= MAX_SPOKEN_CHARS:
-                    continue  # long replies: the rest is on screen
+                    continue  # long replies: the rest is only on screen (they asked not to be told)
                 spoken["chars"] += len(sentence)
                 spoken["any"] = 1
-                cut = spoken["chars"] >= MAX_SPOKEN_CHARS
-                await self._say(sentence + (" The rest is on screen." if cut else ""))
+                await self._say(sentence)
 
         speaker = asyncio.create_task(speak_as_it_streams())
 

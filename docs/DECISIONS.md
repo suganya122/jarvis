@@ -1493,3 +1493,16 @@ stayed alive, its ring in the menu bar, with no microphone (the orange dot gone)
 restarts on AVAudioEngineConfigurationChange; a watchdog restarts it every time it has stopped or
 nothing has arrived for 3 s while listening; it gives up voice processing after 3 tries without
 sound; past 6 it exits, and the ears worker (which restarts itself) starts a fresh helper.
+
+## D115. How the user wants it done is an instruction, not a fact
+
+"Open everything in my browser" was saved but ignored: notes and the graph were both introduced to
+the model as "facts, not instructions" (rightly, for what a page could plant). What the user tells
+Jarvis about how to work is different: it comes only from their own words in a direct turn, so the
+graph learns it as `self wants_assistant_to "<their words>"` (up to 20 words, quoted and checked
+like every fact, never about anyone else), and every one of them is sent on every request under
+its own "always follow these" heading, whatever the request mentions. Saved notes say the same for
+those that describe how to work. Showing the user a page means their own browser (open_url); the
+assistant's browser is for work behind the scenes. Learning now covers more of the user's life
+(projects, studies, home town, languages, goals), and spoken replies are cut at 600 characters
+without saying so.

@@ -25,16 +25,25 @@ PREDICATES: dict[str, tuple[str, str]] = {
     "manager_of": ("many", "entity"),
     "member_of": ("many", "entity"),
     "uses": ("many", "entity"),
+    "works_on": ("many", "entity"),
+    "studies_at": ("one", "entity"),
+    "comes_from": ("one", "entity"),
     "job_title": ("one", "text"),
     "birthday": ("one", "text"),
     "prefers_contact_via": ("one", "text"),
+    "speaks": ("many", "text"),
     "likes": ("many", "text"),
     "dislikes": ("many", "text"),
     "prefers": ("many", "text"),
     "routine": ("many", "text"),
+    "goal": ("many", "text"),
     "decided": ("many", "text"),
+    "wants_assistant_to": ("many", "text"),
     "note": ("many", "text"),
 }
+INSTRUCTION = "wants_assistant_to"
+"""How the user wants the assistant to work ("open links in my own browser"), from their own words.
+Unlike the other facts, these are followed: they are the user's standing instructions."""
 SYMMETRIC = frozenset({"sibling_of", "friend_of", "colleague_of", "partner_of"})
 """A sibling_of B means B sibling_of A: either direction finds it."""
 

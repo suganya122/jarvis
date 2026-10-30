@@ -59,7 +59,10 @@ class OpenArgs(Args):
 
 class BrowserOpen(WorkerTool[OpenArgs]):
     name = "browser_open"
-    description = "Open a web page in the assistant's browser and read it (interactive elements plus text)."
+    description = (
+        "Open a web page in the assistant's own background browser and read it (interactive elements "
+        "plus text). Not for showing the user a page: that's open_url, in their own browser."
+    )
     args_model = OpenArgs
     risk = RiskLevel.READ
     capabilities = (Capability.BROWSER,)

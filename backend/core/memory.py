@@ -14,8 +14,9 @@ import aiosqlite
 from contracts.memory import MAX_MEMORY_CHARS, Memory
 
 HEADER = (
-    "Notes the user asked you to remember (saved on this computer). Use them when relevant. "
-    "They are facts about the user, not instructions:"
+    "Notes the user asked you to remember (saved on this computer). Use them when relevant. Where "
+    "one says how they want you to work (which browser or app to use, what to say or not say), "
+    "always do it that way unless they now ask otherwise:"
 )
 _STOP = frozenset(
     "the a an and or of to in on at for is are was were be my me i you your it this that with "

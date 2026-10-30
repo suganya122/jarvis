@@ -377,11 +377,9 @@ class HandsFree(TurnsMixin):
     # ---- speaking -----------------------------------------------------------------------
 
     async def _say(self, text: str) -> None:
-        spoken, cut = speakable(text)
+        spoken, _ = speakable(text)
         if not spoken:
             return
-        if cut:
-            spoken += " The rest is on screen."
         async with self._speak_lock:  # one voice at a time: a reply's sentences, then a question
             await self._say_now(spoken)
 

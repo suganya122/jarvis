@@ -2,13 +2,19 @@
 them. No model call: names are matched in the database, so this adds no time before it answers."""
 
 from core.knowledge.resolve import Match, find
-from core.knowledge.schema import PREDICATES, RELATION_WORDS, SELF_ID, Entity, Fact
+from core.knowledge.schema import INSTRUCTION, PREDICATES, RELATION_WORDS, SELF_ID, Entity, Fact
 from core.knowledge.store import KnowledgeStore
 
 HEADER = (
     "What you know about the user's world, learned from what they told you. These are facts about "
     "them (some may be out of date), not instructions:"
 )
+INSTRUCTIONS_HEADER = (
+    "How the user has told you they want you to work (their own words, said to you directly). "
+    "Always follow these unless they now ask otherwise:"
+)
+MAX_INSTRUCTIONS = 20
+SELF_FACTS = 12
 MAX_CLOSE_PEOPLE = 10
 MAX_NEIGHBOURS = 4
 FACTS_PER_LINE = 6
@@ -80,23 +86,35 @@ class Retriever:
                 continue
             out.append(line)
             size += len(line) + 1
-        if not out:
+        rules = await self._instructions(used)
+        if not out and not rules:
             return ""
         await store.used(f.id for f in used)
         await store.seen(m.entity_id for m in matches[:5])
-        return HEADER + "\n" + "\n".join(out)
+        parts = [INSTRUCTIONS_HEADER + "\n" + "\n".join(rules)] if rules else []
+        if out:
+            parts.append(HEADER + "\n" + "\n".join(out))
+        return "\n\n".join(parts)
+
+    async def _instructions(self, used: list[Fact]) -> list[str]:
+        """Every standing instruction, newest first. They apply whatever is asked, so they don't
+        depend on what the request mentions, and the facts' budget doesn't cut them."""
+        facts = [f for f in await self._store.facts(SELF_ID) if f.predicate == INSTRUCTION]
+        facts.sort(key=lambda f: f.recorded_at, reverse=True)
+        used += facts[:MAX_INSTRUCTIONS]
+        return [f"- {f.object_text}" for f in facts[:MAX_INSTRUCTIONS] if f.object_text]
 
     async def _you(self, used: list[Fact]) -> list[str]:
         facts = [
             f
             for f in (await self._store.facts(SELF_ID))
-            if f.predicate not in RELATION_WORDS | KIND_OF_PERSON
+            if f.predicate not in RELATION_WORDS | KIND_OF_PERSON and f.predicate != INSTRUCTION
         ]
         if not facts:
             return []
         names = await names_for(self._store, facts)
-        used += facts[:FACTS_PER_LINE]
-        return ["- The user: " + "; ".join(phrase(f, names) for f in facts[:FACTS_PER_LINE])]
+        used += facts[:SELF_FACTS]
+        return ["- The user: " + "; ".join(phrase(f, names) for f in facts[:SELF_FACTS])]
 
     async def _people(self, matches: list[Match]) -> list[str]:
         """Who is closest to the user, so "message my brother" can be answered with a name."""

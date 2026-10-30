@@ -27,7 +27,7 @@ APPROVE = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "approve", "approv
 APPROVE_PHRASES = ("go ahead", "do it", "go for it")
 DENY = {"no", "nope", "nah", "deny", "denied", "cancel", "stop", "dont", "never", "negative", "abort",
         "wait", "not"}  # fmt: skip
-MAX_SPOKEN_CHARS = 300
+MAX_SPOKEN_CHARS = 600
 
 
 def words(text: str) -> list[str]:

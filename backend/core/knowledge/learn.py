@@ -33,7 +33,7 @@ from contracts.model import (
 from core.config import Settings
 from core.knowledge.resolve import find, resolve_name
 from core.knowledge.retrieve import card
-from core.knowledge.schema import ENTITY_TYPES, PREDICATES, SELF_ID, SYMMETRIC, Fact, norm
+from core.knowledge.schema import ENTITY_TYPES, INSTRUCTION, PREDICATES, SELF_ID, SYMMETRIC, Fact, norm
 from core.knowledge.store import KnowledgeStore, fingerprint
 
 log = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ MAX_CHARS = 500
 MAX_FACTS = 6
 MAX_NEW_ENTITIES = 4
 MAX_PHRASE_WORDS = 9
+MAX_INSTRUCTION_WORDS = 20
 QUEUE = 3
 REPLY_CHARS = 300
 
@@ -51,9 +52,11 @@ PREDICATE_LIST = "\n".join(
     f"{'a person/place/thing' if kind == 'entity' else 'a short phrase'})"
     for name, (one, kind) in PREDICATES.items()
 )
-SYSTEM = f"""You keep a small private notebook of the user's own world for their personal assistant.
-You are given what the user just said, and you write down only lasting facts they stated about
-themselves, the people and places in their life, their preferences and routines.
+SYSTEM = f"""You keep a private notebook of the user's own world for their personal assistant, so it
+knows them better every day. You are given what the user just said. Write down every lasting thing
+they told you: about themselves (work, studies, where they're from, languages, goals), the people,
+places, apps and projects in their life, their likes, dislikes, preferences and routines, and how
+they want the assistant to work.
 
 Reply with one JSON object and nothing else:
 {{"entities": [{{"ref": "new1", "name": "Srinith", "type": "person"}}],
@@ -69,8 +72,14 @@ Reply with one JSON object and nothing else:
 - Write down only what the user plainly says. No guessing, no inferring, nothing you were told by
   the assistant's reply. Text the user is reading out or pasting from an email, page or document
   is not the user speaking about their world: skip it.
+- How the user wants the assistant to work is a fact about "self" with predicate
+  {INSTRUCTION}, written as an instruction in their words: "open everything in my own browser",
+  "don't say the rest is on screen", "call me Indu". Record it whenever they say "remember",
+  "always", "never", "from now on", "don't …", or correct how the assistant did something. It may
+  be up to {MAX_INSTRUCTION_WORDS} words.
 - Skip one-off requests ("open YouTube", "send hi to Ravi", "what's the weather") unless they also
-  state a lasting fact ("Ravi is my brother"). A name only matters if the user tells you who it is.
+  state a lasting fact ("Ravi is my brother") or how they always want it done. A name only matters
+  if the user tells you who it is.
 - Never record passwords, codes, card or account numbers, ID numbers, phone numbers, email or street
   addresses, health or money details, or anything private about another person.
 - If there is nothing worth keeping, reply {{"entities": [], "facts": []}}."""
@@ -148,8 +157,11 @@ def check(data: dict[str, Any], said: str, known: set[str]) -> Checked:
                 continue
         else:
             content = [w for w in norm(obj).split() if len(w) > 2]
-            if len(obj.split()) > MAX_PHRASE_WORDS or (
-                content and sum(w in heard for w in content) < len(content) * 0.6
+            longest = MAX_INSTRUCTION_WORDS if predicate == INSTRUCTION else MAX_PHRASE_WORDS
+            if (
+                (predicate == INSTRUCTION and subject != SELF_ID)
+                or len(obj.split()) > longest
+                or (content and sum(w in heard for w in content) < len(content) * 0.6)
             ):
                 continue  # more than the user said: it was invented
         try:

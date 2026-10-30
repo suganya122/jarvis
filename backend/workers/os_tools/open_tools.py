@@ -62,7 +62,10 @@ class UrlArgs(Args):
 
 class OpenUrl(WorkerTool[UrlArgs]):
     name = "open_url"
-    description = "Open an http(s) link in the user's default browser."
+    description = (
+        "Open an http(s) link in the user's own default browser (where they are signed in): "
+        "use it for anything they want to see, watch or use."
+    )
     args_model = UrlArgs
     risk = RiskLevel.WRITE
     capabilities = (Capability.NET_FETCH,)
