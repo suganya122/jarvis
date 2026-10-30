@@ -282,3 +282,22 @@ def test_a_long_or_unfinished_sentence_gets_a_longer_pause() -> None:
     long = "please find the email from my manager about the project review and reply that I agree"
     assert end_of_speech_s(long, 2.0) == 3.0
     assert end_of_speech_s("", 2.0) == 2.0
+
+
+def test_a_recogniser_that_starts_over_after_a_pause_keeps_what_was_said_before_it() -> None:
+    from core.speech_text import Transcript
+
+    said = Transcript()
+    assert said.update("send a message to") == "send a message to"
+    assert said.update("send a message to srinith") == "send a message to srinith"  # it grows
+    assert said.update("send a message to Srinith and") == "send a message to Srinith and"  # revised
+    # a pause, and the engine's text starts over with only what was said after it:
+    assert said.update("tell him") == "send a message to Srinith and tell him"
+    assert said.update("tell him I will be late") == "send a message to Srinith and tell him I will be late"
+    assert (
+        said.update("") == "send a message to Srinith and tell him I will be late"
+    )  # an empty one changes nothing
+    # a correction that drops one trailing word is not a restart:
+    other = Transcript()
+    other.update("open the calendar please")
+    assert other.update("open the calendar") == "open the calendar"

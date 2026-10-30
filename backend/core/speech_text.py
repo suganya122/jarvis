@@ -52,6 +52,28 @@ def end_of_speech_s(text: str, silence_s: float) -> float:
     return silence_s * 1.5 if len(said) >= LONG_WORDS else silence_s
 
 
+class Transcript:
+    """What the recogniser has heard so far, kept whole across its restarts.
+
+    Apple's on-device recogniser sometimes starts its text over after a pause: the words before the
+    gap disappear from the partial result and only what comes after is left. A new result that is
+    clearly shorter and doesn't start where the last one did is such a restart, not a correction,
+    so what was heard before it is kept in front."""
+
+    def __init__(self) -> None:
+        self._kept = ""
+        self._last = ""
+
+    def update(self, raw: str) -> str:
+        raw = raw.strip()
+        if raw:
+            before, now = words(self._last), words(raw)
+            if before and len(now) < len(before) - 1 and (now[0] != before[0] or len(now) * 2 <= len(before)):
+                self._kept = f"{self._kept} {self._last}".strip()
+            self._last = raw
+        return f"{self._kept} {self._last}".strip()
+
+
 def _similar(a: str, b: str, threshold: float) -> bool:
     return a == b or SequenceMatcher(None, a, b).ratio() >= threshold
 

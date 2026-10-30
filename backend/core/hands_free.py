@@ -5,11 +5,9 @@
       └─────────── "that's all" / nothing said for a few seconds ◀────────────────┘
 
 The microphone belongs to the ears process (workers/ears); speech-to-text to the voice worker.
-Everything the user says while idle is transcribed on this computer and thrown away unless it
-starts with the wake word. While it thinks and speaks a second listener (hands_free_barge) lets
-the person cut in; its own voice coming back is told apart by what it's saying.
-
-Approvals (paying, deleting): a spoken "yes" / "no" answers them, or the overlay card's buttons.
+Idle talk is transcribed here and thrown away unless it starts with the wake word. While it
+thinks and speaks, hands_free_barge lets the person cut in (its own voice is told apart).
+Approvals (paying, deleting): a spoken yes/no answers them, or the overlay card.
 """
 
 import asyncio
@@ -42,6 +40,7 @@ from core.hands_free_types import (
     NoiseFloor,
 )
 from core.speech_text import (
+    Transcript,
     could_be_wake,
     end_of_speech_s,
     is_end_phrase,
@@ -257,6 +256,7 @@ class HandsFree(TurnsMixin):
         now = self._d.clock()
         started = last_sound = last_change = now
         text, addressed, final, first_at = "", not wake, None, 0.0
+        said = Transcript()
         preroll: deque[str] = deque(maxlen=PREROLL_FRAMES)
         gate_until = 0.0
         try:
@@ -275,7 +275,7 @@ class HandsFree(TurnsMixin):
                 if kind == "finish":
                     if not text:
                         return None  # let go before saying anything
-                    final = await self._finish(stream, text)
+                    final = await self._finish(stream, text, said)
                     break
                 if kind == "frame":
                     pcm_b64, level = data
@@ -304,11 +304,12 @@ class HandsFree(TurnsMixin):
                     if event.error:
                         self._engine_problem = (event.error, now)
                         return None
+                    heard = said.update(event.text)  # whole, even if the recogniser started over
                     if event.kind == "final":
-                        final = event.text
+                        final = heard
                         break
-                    if event.text and event.text != text:
-                        text, last_change, first_at = event.text, now, first_at or now
+                    if heard and heard != text:
+                        text, last_change, first_at = heard, now, first_at or now
                         last_sound = max(last_sound, now)
                         if wake and not addressed:
                             if match_wake(text, self._wake_word())[0]:
@@ -321,7 +322,7 @@ class HandsFree(TurnsMixin):
                 pause = end_of_speech_s(text, silence_s)
                 stalled = pause + STALLED_EXTRA_S + (pause if now - last_sound < TALKING_S else 0.0)
                 if text and (now - last_sound >= pause or now - last_change >= stalled):
-                    final = await self._finish(stream, text)
+                    final = await self._finish(stream, text, said)
                     break
                 if not text and first_word_s is not None and now - started >= first_word_s:
                     return None
@@ -356,7 +357,7 @@ class HandsFree(TurnsMixin):
         self.state = "listening"
         await self._d.screen.voice_show("listening", partial=text, status="Listening…")
 
-    async def _finish(self, stream: str, fallback: str) -> str:
+    async def _finish(self, stream: str, fallback: str, said: Transcript) -> str:
         """Ask the recogniser to flush, and take its final text (or what we had)."""
         await self._d.recognizer.close(stream)
         deadline = self._d.clock() + FINAL_WAIT_S
@@ -366,7 +367,7 @@ class HandsFree(TurnsMixin):
             except TimeoutError:
                 continue
             if kind == "stt" and data.kind == "final":
-                return str(data.text) or fallback
+                return said.update(str(data.text)) or fallback
         return fallback
 
     async def _drop_stream(self, stream: str, abort: bool) -> None:

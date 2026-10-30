@@ -639,3 +639,19 @@ def test_the_cut_in_listeners_transcripts_reach_the_voice_loop() -> None:
     from core.voice_loop import VoiceLoop
 
     assert VoiceLoop.owns(TranscriptEvent(stream_id=f"{STREAM_PREFIX}abc", kind="partial", text="wait"))
+
+
+def test_words_before_a_pause_are_kept_when_the_recogniser_starts_its_text_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, silence_s=0.4)
+        async with rig.running():
+            await rig.speak("jarvis send a message to srinith and")
+            await asyncio.sleep(0.1)
+            await rig.speak("tell him")  # the engine's text starts over: only what came after the gap
+            await rig.speak("tell him i will be late")
+            await rig.until(lambda: rig.ears.said == ["It is noon."])
+            assert rig.turns[0][0] == "send a message to srinith and tell him i will be late"
+
+    asyncio.run(run())
