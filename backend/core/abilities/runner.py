@@ -76,7 +76,10 @@ async def run(folder: Path, args: dict[str, Any], timeout_s: float = RUN_TIMEOUT
         out, err = await asyncio.wait_for(proc.communicate(json.dumps(args).encode()), timeout_s)
     except TimeoutError:
         with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGKILL)  # and anything it started
+            if sys.platform == "win32":
+                proc.kill()
+            else:
+                os.killpg(proc.pid, signal.SIGKILL)  # and anything it started
         await proc.wait()
         return Ran(False, f"it took longer than {timeout_s:.0f} s and was stopped")
     last = out.decode(errors="replace").strip().splitlines()[-1:] or [""]
