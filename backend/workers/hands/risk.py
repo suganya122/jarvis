@@ -5,8 +5,12 @@ import re
 from contracts.common import RiskLevel
 
 _PURCHASE = re.compile(
-    r"\b(buy|purchase|pay|checkout|check out|place order|order now|subscribe|donate)\b", re.I
+    r"\b(buy|purchase|pay|payment|pay now|checkout|check out|place order|order now|subscribe|donate|"
+    r"book|book now|booking|reserve|request ride|confirm ride|request \w+ ride|top up|recharge|transfer)\b",
+    re.I,
 )
+MONEY = re.compile(r"[₹$€£¥]\s*\d|\d\s*[₹$€£¥]|\b(?:rs|inr|usd|eur|gbp|aed|sgd)\.?\s*\d", re.I)
+"""An amount of money in what a click is said to do: it pays, whatever the button is called."""
 _SEND = re.compile(r"\b(send|post|publish|share|reply|submit|tweet|upload|forward|invite|email)\b", re.I)
 _DESTRUCTIVE = re.compile(
     r"\b(delete|remove|erase|discard|format|wipe|empty|uninstall|reset|overwrite|clear all|destroy|revoke)\b",

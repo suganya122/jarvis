@@ -22,7 +22,7 @@ from workers.hands.locate import (
     element_meta,
     window_meta,
 )
-from workers.hands.risk import key_risk, label_risk
+from workers.hands.risk import MONEY, key_risk, label_risk
 
 WORKER_NAME = "hands"
 
@@ -117,19 +117,33 @@ class ElementArgs(Args):
     element_id: ElementRef = Field(description="A control id from find_elements, e.g. 'e3'.")
 
 
-class ClickElement(WorkerTool[ElementArgs]):
+class ClickArgs(ElementArgs):
+    about: str = Field(
+        default="",
+        max_length=300,
+        description=(
+            "For a pay, buy, send or delete button: what it will do, as the screen shows it "
+            "(amount and currency, to whom, which card or account, what is sent or deleted). "
+            "The user sees this when asked to confirm."
+        ),
+    )
+
+
+class ClickElement(WorkerTool[ClickArgs]):
     name = "click_element"
     description = "Press a button, link, menu item or checkbox through accessibility (no mouse needed)."
-    args_model = ElementArgs
+    args_model = ClickArgs
     risk = RiskLevel.WRITE
     capabilities = (Capability.INPUT_CONTROL,)
 
-    def assess(self, args: ElementArgs, env: HandsEnv) -> ToolAssessment:
+    def assess(self, args: ClickArgs, env: HandsEnv) -> ToolAssessment:
         real, label = env.element(args.element_id)[:2]
         info = env.hands.describe(real)
-        return ToolAssessment(risk=label_risk(info.name), summary=f"Click {label}")
+        about = f": {args.about.strip()}" if args.about.strip() else ""
+        risk = RiskLevel.PURCHASE if MONEY.search(args.about) else label_risk(info.name, args.about)
+        return ToolAssessment(risk=risk, summary=f"Click {label}{about}")
 
-    async def run(self, args: ElementArgs, env: HandsEnv) -> ToolResult:
+    async def run(self, args: ClickArgs, env: HandsEnv) -> ToolResult:
         real, label, short = env.element(args.element_id)
         result = await asyncio.to_thread(env.hands.activate, real)
         return _report(f"Clicked {label}", result, env.config.max_output_chars, env.target(short))

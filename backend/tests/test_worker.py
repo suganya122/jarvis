@@ -204,6 +204,10 @@ def test_full_stack_daemon_uses_worker_tools(root: Path, tmp_path: Path) -> None
     data.mkdir()
     for harness in make_harness(data, provider, start_workers=True, settings=settings):
         assert harness.client.get("/api/status", headers=harness.auth).json()["os_tools"] is True
+        offered = {t["name"] for t in harness.client.get("/api/tools", headers=harness.auth).json()}
+        assert "open_url" in offered and not any(
+            n.startswith("browser_") for n in offered
+        )  # no browser of its own
         with harness.ws() as ws:
             handshake(ws)
             ws.send_text(json.dumps({"type": "chat.send", "request_id": "r1", "text": "list docs"}))

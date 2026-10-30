@@ -241,8 +241,8 @@ class Runtime:
             (OS_WORKER, "workers.os_tools"),
             (HANDS_WORKER, "workers.hands"),
             (VOICE_WORKER, "workers.voice"),
-            ("browser", "workers.browser"),
-        )
+            *([("browser", "workers.browser")] if self._settings.browser.enabled else []),
+        )  # without its own browser, the web is done in the user's, through its window
         for name, module in workers:
             host = WorkerHost(name, module, extra_env=extra_env)
             try:

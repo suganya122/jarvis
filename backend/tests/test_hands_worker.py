@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from contracts.worker import WorkerConfig
-from core.config import Settings
+from core.config import Settings, SkillSettings
 from core.worker_host import WorkerHost
 from models.fake import FakeProvider, FakeStep
 from tests.a11y_session import a11y_session, missing_requirements
@@ -92,7 +92,13 @@ def test_full_stack_daemon_with_hands(desktop: dict[str, str], tmp_path: Path) -
     )
     data = tmp_path / "data"
     data.mkdir()
-    for harness in make_harness(data, provider, start_workers=True, settings=Settings(), worker_env=desktop):
+    for harness in make_harness(
+        data,
+        provider,
+        start_workers=True,
+        settings=Settings(skills=SkillSettings(learn=True)),
+        worker_env=desktop,
+    ):
         status = harness.client.get("/api/status", headers=harness.auth).json()
         assert status["hands"] is True
         with harness.ws() as ws:
@@ -134,7 +140,13 @@ def test_learned_hands_skill_replays_by_locator(desktop: dict[str, str], tmp_pat
     provider = FakeProvider(script=turn + turn)
     data = tmp_path / "data"
     data.mkdir()
-    for harness in make_harness(data, provider, start_workers=True, settings=Settings(), worker_env=desktop):
+    for harness in make_harness(
+        data,
+        provider,
+        start_workers=True,
+        settings=Settings(skills=SkillSettings(learn=True)),
+        worker_env=desktop,
+    ):
         with harness.ws() as ws:
             handshake(ws)
             notes = []

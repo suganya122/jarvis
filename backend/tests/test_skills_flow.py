@@ -54,6 +54,9 @@ def make(tmp_path: Path) -> Iterator[Make]:
     ) -> tuple[Harness, dict[str, Recorder], FakeProvider]:
         tools = {t.info.name: t for t in (Recorder("launch"), Recorder("shred", RiskLevel.DESTRUCTIVE))}
         provider = FakeProvider(script=script)
+        if settings is None:
+            settings = Settings()
+            settings.skills.learn = True  # off by default: learning skills is something the user turns on
         gen = make_harness(tmp_path, provider, extra_tools=tuple(tools.values()), settings=settings)
         harness = next(gen)
         stack.callback(lambda: next(gen, None))
@@ -134,6 +137,7 @@ def test_failing_replays_demote_the_skill(make: Make) -> None:
 def test_force_model_and_disabled_skills_go_to_the_model(make: Make) -> None:
     settings = Settings()
     settings.skills.promote_after = 1
+    settings.skills.learn = True
     harness, _, _provider = make(
         [*model_turn("launch", {"app": "atom"}), FakeStep(text="x"), FakeStep(text="y")], settings
     )
@@ -149,6 +153,7 @@ def test_force_model_and_disabled_skills_go_to_the_model(make: Make) -> None:
 def test_skill_api_edits_are_validated(make: Make) -> None:
     settings = Settings()
     settings.skills.promote_after = 1
+    settings.skills.learn = True
     harness, _, _ = make(model_turn("launch", {"app": "spotify"}), settings)
     with harness.ws() as ws:
         handshake(ws)

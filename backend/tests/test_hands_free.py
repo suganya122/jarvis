@@ -104,7 +104,7 @@ class FakeScreen:
 
 
 class Rig:
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, live: bool = False) -> None:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, live: bool = False, silence_s: float = 0.15) -> None:
         monkeypatch.setattr(hands_free, "TICK_S", 0.02)
         monkeypatch.setattr(hands_free, "SPEAK_TAIL_S", 0.0)
         monkeypatch.setattr(hands_free, "STALLED_EXTRA_S", 5.0)
@@ -121,7 +121,7 @@ class Rig:
         self.turn_script: Callable[[Callable[[ServerMessage], Awaitable[None]]], Awaitable[None]] | None = (
             None
         )
-        voice = VoiceSettings.model_construct(silence_s=0.15, follow_up_s=0.5, stay_live=live)
+        voice = VoiceSettings.model_construct(silence_s=silence_s, follow_up_s=0.5, stay_live=live)
         self.hf = HandsFree(
             HandsFreeDeps(
                 ears=self.ears,
@@ -620,10 +620,10 @@ def test_wait_just_makes_it_listen(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_a_thinking_pause_in_a_long_request_does_not_cut_it_off(monkeypatch: pytest.MonkeyPatch) -> None:
     async def run() -> None:
-        rig = Rig(monkeypatch)
+        rig = Rig(monkeypatch, silence_s=0.4)
         async with rig.running():
             await rig.speak("jarvis send a message to srinith and")
-            await asyncio.sleep(0.22)  # past the 0.15 s pause, but the sentence was left open
+            await asyncio.sleep(0.55)  # past the 0.4 s pause, but the sentence was left open (0.8 s)
             assert rig.turns == []
             await rig.speak("jarvis send a message to srinith and tell him i will be late today")
             await rig.until(lambda: rig.ears.said == ["It is noon."])

@@ -112,3 +112,20 @@ async def test_settings_saved_with_the_old_cheap_default_move_up_once(tmp_path: 
     await store.save_settings(chosen)
     assert (await store.load_settings()).default_tier == "cheap"
     await store.close()
+
+
+async def test_it_stops_learning_skills_on_its_own_and_has_no_browser_of_its_own(tmp_path: Path) -> None:
+    """The user's rules: capabilities are built only when they ask; the web is their own browser."""
+    store = await make_store(tmp_path)
+    await store._conn.execute(
+        "INSERT INTO settings(key, value) VALUES('settings', ?)",
+        ('{"schema_version": 1, "defaults_version": 1, "skills": {"learn": true, "promote_after": 3}}',),
+    )
+    await store._conn.commit()
+    upgraded = await store.load_settings()
+    assert upgraded.skills.learn is False and upgraded.skills.promote_after == 3
+    assert upgraded.browser.enabled is False
+    turned_on = upgraded.model_copy(update={"skills": upgraded.skills.model_copy(update={"learn": True})})
+    await store.save_settings(turned_on)  # the user turning it on themselves is kept
+    assert (await store.load_settings()).skills.learn is True
+    await store.close()

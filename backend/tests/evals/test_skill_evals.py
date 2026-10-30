@@ -13,7 +13,7 @@ from typing import Any
 
 from contracts.common import Capability, RiskLevel, Trust
 from contracts.tools import ToolAssessment, ToolContext, ToolInfo, ToolResult
-from core.config import Settings
+from core.config import Settings, SkillSettings
 from models.fake import FakeProvider, FakeStep
 from tests.conftest import handshake, make_harness
 
@@ -194,7 +194,10 @@ def run_scenario(scenario: Scenario) -> dict[str, Any]:
     provider = FakeProvider(script=script)
     with tempfile.TemporaryDirectory() as tmp:
         for harness in make_harness(
-            Path(tmp), provider, extra_tools=tuple(toolset.values()), settings=Settings()
+            Path(tmp),
+            provider,
+            extra_tools=tuple(toolset.values()),
+            settings=Settings(skills=SkillSettings(learn=True)),
         ):
             with harness.ws() as ws:
                 handshake(ws)

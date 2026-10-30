@@ -38,9 +38,9 @@ async def ids(env: T.HandsEnv) -> dict[str, str]:
 async def test_find_and_click_with_short_ids(env: T.HandsEnv) -> None:
     names = await ids(env)
     assert names["Increment"].startswith("e")
-    assessment = T.ClickElement().assess(T.ElementArgs(element_id=names["Increment"]), env)
+    assessment = T.ClickElement().assess(T.ClickArgs(element_id=names["Increment"]), env)
     assert assessment.risk is RiskLevel.WRITE and "Increment" in assessment.summary
-    result = await T.ClickElement().run(T.ElementArgs(element_id=names["Increment"]), env)
+    result = await T.ClickElement().run(T.ClickArgs(element_id=names["Increment"]), env)
     assert result.ok and "Observed: label now 'Count: 1'" in result.output
     assert result.trust is Trust.UNTRUSTED
 
@@ -48,8 +48,8 @@ async def test_find_and_click_with_short_ids(env: T.HandsEnv) -> None:
 async def test_button_labels_raise_risk(env: T.HandsEnv) -> None:
     names = await ids(env)
     click = T.ClickElement()
-    assert click.assess(T.ElementArgs(element_id=names["Delete all"]), env).risk is RiskLevel.DESTRUCTIVE
-    assert click.assess(T.ElementArgs(element_id=names["Send report"]), env).risk is RiskLevel.EXTERNAL_SEND
+    assert click.assess(T.ClickArgs(element_id=names["Delete all"]), env).risk is RiskLevel.DESTRUCTIVE
+    assert click.assess(T.ClickArgs(element_id=names["Send report"]), env).risk is RiskLevel.EXTERNAL_SEND
     menu = T.ChooseMenu().assess(T.MenuArgs(window_id="w1", path=["File", "Say hello"]), env)
     assert menu.risk is RiskLevel.WRITE and "File → Say hello" in menu.summary
 
@@ -91,7 +91,7 @@ async def test_unknown_ids_and_missing_uinput(env: T.HandsEnv, monkeypatch: pyte
         T.FindElements().assess(T.FindArgs(window_id="w9"), env)
     await ids(env)
     with pytest.raises(T.HandsUnavailable):
-        T.ClickElement().assess(T.ElementArgs(element_id="w1"), env)  # wrong kind
+        T.ClickElement().assess(T.ClickArgs(element_id="w1"), env)  # wrong kind
     monkeypatch.setattr(uinput, "available", lambda: "no uinput")
     assert T.PressKeys().assess(T.KeysArgs(window_id="w1", keys="enter"), env).error == "no uinput"
 
@@ -155,3 +155,14 @@ def test_describe_changes() -> None:
          "2": ElementInfo(element_id="2", role="dialog", name="Saved")}  # fmt: skip
     assert describe_changes(a, b) == ["label now 'Count: 1' (was 'Count: 0')", "appeared: dialog 'Saved'"]
     assert describe_changes(b, a) == ["label now 'Count: 0' (was 'Count: 1')", "gone: dialog 'Saved'"]
+
+
+def test_a_click_that_pays_asks_with_what_it_pays_whatever_the_button_says() -> None:
+    from workers.hands.risk import MONEY, label_risk
+
+    assert label_risk("Confirm payment") is RiskLevel.PURCHASE
+    assert label_risk("Request UberGo ride") is RiskLevel.PURCHASE
+    assert label_risk("Book now") is RiskLevel.PURCHASE
+    assert label_risk("Continue") is RiskLevel.WRITE
+    assert MONEY.search("₹450 to Uber, Visa ending 4242") and MONEY.search("Rs. 120 for the cab")
+    assert not MONEY.search("2 tickets for Friday")

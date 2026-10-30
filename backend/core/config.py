@@ -176,8 +176,9 @@ class AgentSettings(BaseModel):
 class SkillSettings(BaseModel):
     enabled: bool = True
     """Replay learned skills before asking the model."""
-    learn: bool = True
-    """Record verified tool sequences as skill candidates."""
+    learn: bool = False
+    """Record verified tool sequences as skill candidates. Off by default: the assistant builds
+    capabilities only when the user asks it to (they can turn this on in Settings)."""
     promote_after: int = Field(default=2, ge=1, le=10)
     """Verified successes before a skill replays on its own."""
     demote_after_failures: int = Field(default=2, ge=1, le=10)
@@ -232,6 +233,9 @@ class BackgroundSettings(BaseModel):
 
 
 class BrowserSettings(BaseModel):
+    enabled: bool = False
+    """The assistant's own browser. Off (the default, the user's rule): everything on the web is
+    done in the user's own browser, through its window, where their logins and saved cards are."""
     mode: Literal["isolated", "own"] = "isolated"
     """isolated: the assistant's own browser profile. own: your logged-in Chrome (opt in)."""
     show_window: bool = False
@@ -293,7 +297,7 @@ class PluginSettings(BaseModel):
     messages_per_minute: int = Field(default=10, ge=1, le=120)
 
 
-DEFAULTS_VERSION = 1
+DEFAULTS_VERSION = 2
 """Bumped when a default changes in a way saved settings should pick up once (see upgrade_saved)."""
 
 
@@ -301,9 +305,11 @@ def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
     """Settings saved before the current defaults: take the new defaults that were never a choice.
     Until 0.1.17 every request went to the smallest model (Haiku, low effort), which loses the
     thread of a multi-step conversation; the balanced model (Sonnet) is the default now. Done once:
-    a tier chosen afterwards is kept."""
+    a tier chosen afterwards is kept. Until 0.1.22 it learned skills on its own; now only when asked."""
     if data.get("defaults_version", 0) < 1 and data.get("default_tier") == "cheap":
         data["default_tier"] = "balanced"
+    if data.get("defaults_version", 0) < 2 and isinstance(data.get("skills"), dict):
+        data["skills"] = {**data["skills"], "learn": False}
     return {**data, "defaults_version": DEFAULTS_VERSION}
 
 

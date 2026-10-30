@@ -14,7 +14,11 @@ HOST = Path(__file__).with_name("host.py")
 RUN_TIMEOUT_S = 120.0
 INSTALL_TIMEOUT_S = 600.0
 MAX_OUTPUT_CHARS = 8_000
-PASSED_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "SHELL", "SystemRoot", "TEMP")
+PASSED_ENV = frozenset(
+    {"PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "SHELL",
+     "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "SYSTEMDRIVE",
+     "WINDIR", "TEMP", "TMP", "COMSPEC", "PATHEXT", "USERNAME"}
+)  # fmt: skip
 """Only these reach an ability: no API keys, tokens or anything else from Jarvis's environment."""
 
 
@@ -25,7 +29,7 @@ class Ran:
 
 
 def clean_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k in PASSED_ENV}
+    env = {k: v for k, v in os.environ.items() if k.upper() in PASSED_ENV}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
