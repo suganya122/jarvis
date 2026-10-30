@@ -166,3 +166,31 @@ def test_a_click_that_pays_asks_with_what_it_pays_whatever_the_button_says() -> 
     assert label_risk("Continue") is RiskLevel.WRITE
     assert MONEY.search("₹450 to Uber, Visa ending 4242") and MONEY.search("Rs. 120 for the cab")
     assert not MONEY.search("2 tickets for Friday")
+
+
+async def test_paste_puts_long_text_in_whole_and_gives_the_clipboard_back(
+    env: T.HandsEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(T, "PASTE_WAIT_S", 0.0)
+    board = ["what the user had copied"]
+    pasted: list[str] = []
+
+    def put(text: str) -> bool:
+        board[0] = text
+        pasted.append(text)
+        return True
+
+    env.clipboard, env.set_clipboard = (lambda: board[0]), put
+    prompt = "Build me a landing page.\n\nRequirements:\n- fast\n- simple"
+    await T.ListWindows().run(T.NoArgs(), env)
+    assessment = T.PasteText().assess(T.PasteArgs(window_id="w1", text=prompt), env)
+    assert assessment.risk is RiskLevel.WRITE and "(5 lines)" in assessment.summary
+    result = await T.PasteText().run(T.PasteArgs(window_id="w1", text=prompt), env)
+    assert result.ok and f"Pasted {len(prompt)} characters" in result.output
+    assert pasted == [prompt, "what the user had copied"]  # the prompt in one go, then theirs back
+    window = next(iter(env.hands.windows.values()))  # type: ignore[attr-defined]
+    assert window.keys[-1] in ("ctrl+v", "meta+v")
+
+    env.set_clipboard = lambda _: False  # nowhere to paste from: says so, and how else to do it
+    refused = await T.PasteText().run(T.PasteArgs(window_id="w1", text="x"), env)
+    assert not refused.ok and "type_text" in refused.output

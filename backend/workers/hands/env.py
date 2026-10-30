@@ -86,6 +86,7 @@ class HandsEnv:
         self.pointer: Callable[[], tuple[int, int] | None] = displays.pointer
         self.pointer_reliable: Callable[[], bool] = _pointer_reliable
         self.clipboard: Callable[[], str | None] = clipboard.read
+        self.set_clipboard: Callable[[str], bool] = clipboard.write
 
     def window(self, ref: WindowRef) -> tuple[str, str, str]:
         """(real id, label, short id) for a session id or a locator."""

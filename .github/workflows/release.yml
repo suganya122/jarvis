@@ -98,4 +98,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --latest --verify-tag --generate-notes dist/*
+        # GitHub's release and upload service sometimes answers 500 (v0.1.21 failed three times on
+        # one file). So: a draft first (or the one a failed attempt left), every file uploaded and
+        # retried on its own, and published only once all are there.
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"; repo="$GITHUB_REPOSITORY"
+          retry() { for try in 1 2 3 4 5; do "$@" && return 0; echo "attempt $try failed; retrying"; sleep $((try * 15)); done; return 1; }
+          gh release view "$tag" --repo "$repo" >/dev/null 2>&1 \
+            || retry gh release create "$tag" --repo "$repo" --draft --verify-tag --generate-notes
+          for file in dist/*; do retry gh release upload "$tag" "$file" --repo "$repo" --clobber; done
+          retry gh release edit "$tag" --repo "$repo" --draft=false --latest

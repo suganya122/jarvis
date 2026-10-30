@@ -60,6 +60,7 @@ async def test_worker_drives_the_fixture(host: WorkerHost) -> None:
         "capture_screen",
         "highlight_area",
         "insert_text",
+        "paste_text",
         "active_context",
     }
     snap = (await host.invoke("active_context", {})).evidence["context"]  # the real AT-SPI snapshot

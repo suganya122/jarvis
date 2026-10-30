@@ -1,6 +1,7 @@
 """Hands tools exposed to the model. All screen-derived output is untrusted."""
 
 import asyncio
+import sys
 from typing import Any, ClassVar, Literal
 
 from pydantic import Field
@@ -321,3 +322,52 @@ class InsertText(WorkerTool[InsertArgs]):
         result = await asyncio.to_thread(env.hands.insert_text, args.text)
         app = result.evidence.get("app", "the app")
         return _report(f"Typed into {app}", result, env.config.max_output_chars)
+
+
+class PasteArgs(Args):
+    window_id: WindowRef
+    text: str = Field(min_length=1, max_length=50_000)
+
+
+PASTE_WAIT_S = 0.6
+"""Long enough for the app to read the clipboard before the user's own is put back."""
+
+
+class PasteText(WorkerTool[PasteArgs]):
+    name = "paste_text"
+    description = (
+        "Paste text into the focused field of a window (click the field first). Fast, keeps line "
+        "breaks, and never sends early: use it for anything long or multi-line, such as a prompt "
+        "for an AI chat or an email body. The user's clipboard is put back afterwards."
+    )
+    args_model = PasteArgs
+    risk = RiskLevel.WRITE
+    capabilities = (Capability.INPUT_CONTROL,)
+
+    def assess(self, args: PasteArgs, env: HandsEnv) -> ToolAssessment:
+        _, label = env.window(args.window_id)[:2]
+        preview = args.text if len(args.text) <= 60 else args.text[:60] + "…"
+        lines = args.text.count("\n") + 1
+        return ToolAssessment(risk=self.risk, summary=f"Paste “{preview}” ({lines} lines) into {label}")
+
+    async def run(self, args: PasteArgs, env: HandsEnv) -> ToolResult:
+        real, label, short = env.window(args.window_id)
+        focused = await asyncio.to_thread(env.hands.focused_element)
+        if focused is not None and focused.role == "password text":
+            return ToolResult(ok=False, output="Not pasted: the focused field is a password field.")
+        before = await asyncio.to_thread(env.clipboard)
+        if not await asyncio.to_thread(env.set_clipboard, args.text):
+            return ToolResult(
+                ok=False, output="Not pasted: the clipboard can't be used here; use type_text instead."
+            )
+        try:
+            combo = "meta+v" if sys.platform == "darwin" else "ctrl+v"
+            result = await asyncio.to_thread(env.hands.key, real, combo)
+            await asyncio.sleep(PASTE_WAIT_S)
+        finally:
+            if before:  # text the user had copied comes back; anything else stays as it is
+                await asyncio.to_thread(env.set_clipboard, before)
+        chars = len(args.text)
+        return _report(
+            f"Pasted {chars} characters into {label}", result, env.config.max_output_chars, env.target(short)
+        )

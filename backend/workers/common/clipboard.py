@@ -62,3 +62,27 @@ def read() -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.decode("utf-8", errors="replace")[:MAX_CHARS] if out.returncode == 0 else ""
+
+
+def _write_command() -> list[str] | None:
+    if sys.platform == "darwin":
+        return ["pbcopy"]
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        return ["wl-copy", "--type", "text/plain"]
+    if shutil.which("xclip"):
+        return ["xclip", "-selection", "clipboard"]
+    if shutil.which("xsel"):
+        return ["xsel", "--clipboard", "--input"]
+    return None
+
+
+def write(text: str) -> bool:
+    """Put text on the clipboard. False when it can't be done here."""
+    argv = _write_command()
+    if argv is None:
+        return False
+    try:
+        out = subprocess.run(argv, input=text.encode("utf-8"), capture_output=True, timeout=2, check=False)  # noqa: S603
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.returncode == 0
