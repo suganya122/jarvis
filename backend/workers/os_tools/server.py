@@ -12,6 +12,7 @@ from workers.os_tools.mac_automation import MacAutomation
 from workers.os_tools.notify_tools import DesktopNotify, FileInfo
 from workers.os_tools.open_tools import OpenPath, OpenUrl
 from workers.os_tools.paths import PathDenied
+from workers.os_tools.shell_full import RunShell
 from workers.os_tools.shell_tool import RunCommand
 from workers.os_tools.system_tool import SystemInfo
 from workers.os_tools.window_tools import ArrangeWindows
@@ -23,6 +24,7 @@ def all_tools() -> dict[str, WorkerTool[Any, Any]]:
         ReadTextFile(),
         WriteTextFile(),
         RunCommand(),
+        RunShell(),
         OpenUrl(),
         OpenPath(),
         SystemInfo(),

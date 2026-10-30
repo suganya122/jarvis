@@ -31,6 +31,8 @@ class WorkerConfig(ContractModel):
     denied_paths: tuple[str, ...]
     """Absolute paths that are always off limits, even inside an allowed root."""
     shell_allowlist: tuple[str, ...]
+    full_control: bool = False
+    """run_shell may run any command (see ToolSettings.full_control)."""
     max_output_chars: int
     command_timeout_s: float
     stt_model_dir: str = ""

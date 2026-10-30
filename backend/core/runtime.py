@@ -87,8 +87,8 @@ class Runtime:
         self.knowledge = Knowledge(
             store.conn, self.memory, self.provider, lambda: self._settings, store.record_cost
         )
-        tools: list[Tool] = [Remember(self.memory), Forget(self.memory), Recall(self.memory)]
-        for tool in [*tools, *self.knowledge.tools, *extra_tools]:
+        memory_tools: list[Tool] = [Remember(self.memory), Forget(self.memory), Recall(self.memory)]
+        for tool in [*memory_tools, *self.knowledge.tools, *extra_tools]:
             self.registry.register(tool)
         self.abilities = Abilities(data_dir / "abilities", self.registry, self.provider, store.record_cost)
         self.projects = Projects(store.conn, self.registry, RuntimeHost(self))
@@ -195,12 +195,12 @@ class Runtime:
 
     def worker_config(self) -> WorkerConfig:
         tools = self._settings.tools
-        # The app's own data (auth token, database) is always off limits.
-        denied = [*tools.denied_paths, str(self._data_dir)]
+        denied = [*tools.denied_paths, str(self._data_dir)]  # the app's own data is always off limits
         return WorkerConfig(
             allowed_roots=tuple(_expand(p) for p in tools.allowed_roots),
             denied_paths=tuple(_expand(p) for p in denied),
             shell_allowlist=tuple(tools.shell_allowlist),
+            full_control=tools.full_control,
             max_output_chars=tools.max_output_chars,
             command_timeout_s=tools.command_timeout_s,
             blocked_apps=tuple(tools.blocked_apps),

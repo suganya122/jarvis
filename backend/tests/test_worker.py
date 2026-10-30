@@ -79,8 +79,8 @@ def test_worker_env_has_no_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_lists_and_reads_as_untrusted(host: WorkerHost, root: Path) -> None:
     names = {t.name for t in host.tools}
-    assert {"list_directory", "read_text_file", "write_text_file", "run_command", "open_url", "open_path",
-            "system_info", "open_app", "arrange_windows", "media_control", "file_info",
+    assert {"list_directory", "read_text_file", "write_text_file", "run_command", "run_shell", "open_url",
+            "open_path", "system_info", "open_app", "arrange_windows", "media_control", "file_info",
             "desktop_notify", *(["mac_automation"] if sys.platform == "darwin" else [])} == names  # fmt: skip
     listing = await host.invoke("list_directory", {"path": str(root / "allowed")})
     assert listing.ok and "docs/" in listing.output and listing.trust is Trust.UNTRUSTED
