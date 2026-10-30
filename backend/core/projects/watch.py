@@ -8,6 +8,7 @@ checks the work (core.projects.review), which may send it back for fixes and wat
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ MISSING_AFTER = 3
 GIVE_UP_S = 3 * 3600.0
 
 Tell = Callable[[str, str], Awaitable[None]]
-Review = Callable[[Project], Coroutine[Any, Any, bool]]
+Review = Callable[[Project], Coroutine[Any, Any, None]]
 
 
 @dataclass(slots=True)
@@ -49,6 +50,27 @@ def find_window(listing: str, wanted: str) -> str | None:
     return None
 
 
+CONTROL = re.compile(r"^e\d+\s+[\w -]+? '(?P<name>(?:[^'\\]|\\.)*)'(?: text='(?P<text>.*)')?")
+
+
+def shows(found: str, marker: str) -> bool:
+    """Is the working sign there? A one-word sign ("Stop") must start a control's name as a whole
+    word ("Stop response", not "Stopwatch"); a phrase ("esc to interrupt") may be anywhere in a
+    control's name or text. Never the window title: a project called "Stopwatch" isn't a sign."""
+    wanted = " ".join(marker.casefold().split())
+    for line in found.splitlines():
+        match = CONTROL.match(line.strip())
+        if match is None:
+            continue
+        name = " ".join(match["name"].casefold().split())
+        if " " in wanted:
+            if wanted in name or wanted in " ".join((match["text"] or "").casefold().split()):
+                return True
+        elif name == wanted or name.startswith(wanted + " "):
+            return True
+    return False
+
+
 class ProjectWatcher:
     def __init__(
         self,
@@ -57,6 +79,7 @@ class ProjectWatcher:
         tell: Tell,
         review: Review | None = None,
         rounds: int = 0,
+        track: Callable[["asyncio.Task[None]"], None] | None = None,
         poll_s: float = POLL_S,
     ) -> None:
         self._store = store
@@ -64,9 +87,10 @@ class ProjectWatcher:
         self._tell = tell
         self._review = review
         self._rounds = rounds
+        self._track = track
         self._poll_s = poll_s
         self._watches: dict[str, Watch] = {}
-        self._reviewing: dict[str, asyncio.Task[bool]] = {}
+        self._reviewing: dict[str, asyncio.Task[None]] = {}
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -96,8 +120,10 @@ class ProjectWatcher:
         """One look at every project another AI is working on, and the checks that are due."""
         active = await self._store.active()
         for project in active:
-            if project.review_due and project.status not in WATCHED:
-                self._start_review(project)
+            running = self._reviewing.get(project.id)
+            interrupted = project.status == "reviewing" and (running is None or running.done())
+            if (project.review_due or interrupted) and project.status not in WATCHED:
+                self._start_review(project)  # due, or cut short (a restart, the kill switch)
         watched = [p for p in active if p.status in WATCHED and p.watch_window]
         for gone in set(self._watches) - {p.id for p in watched}:
             del self._watches[gone]
@@ -124,14 +150,18 @@ class ProjectWatcher:
                 )
             return
         watch.missing = 0
+        if time.time() - watch.started > GIVE_UP_S:
+            who = project.built_with or "It"
+            await self._finish(
+                project, "paused", f"{who} has been on {project.name} for hours; I stopped watching."
+            )
+            return
         working = False
         if project.working_marker:
-            marker = project.working_marker.casefold()
-            label = next((ln for ln in listing.splitlines() if ln.startswith(window + "  ")), "")
             found_ok, found = await self._run(
-                "find_elements", {"window_id": window, "query": project.working_marker, "limit": 3}
+                "find_elements", {"window_id": window, "query": project.working_marker, "limit": 10}
             )
-            working = marker in label.casefold() or (found_ok and not found.startswith("No matching"))
+            working = found_ok and shows(found, project.working_marker)
         if working:
             watch.seen_working, watch.idle = True, 0
             if project.status != "working":
@@ -147,10 +177,6 @@ class ProjectWatcher:
             )
         elif not watch.seen_working and watch.idle >= NEVER_SEEN_AFTER:
             await self._finish(project, "answered", f"{who} seems to have answered on {project.name}.")
-        elif time.time() - watch.started > GIVE_UP_S:
-            await self._finish(
-                project, "paused", f"{who} has been on {project.name} for hours; I stopped watching."
-            )
 
     async def _finish(self, project: Project, status: str, said: str) -> None:
         checking = status == "answered" and self._review is not None and project.rounds < self._rounds
@@ -166,4 +192,7 @@ class ProjectWatcher:
         running = self._reviewing.get(project.id)
         if self._review is None or (running is not None and not running.done()):
             return
-        self._reviewing[project.id] = asyncio.create_task(self._review(project))
+        task = asyncio.create_task(self._review(project))
+        self._reviewing[project.id] = task
+        if self._track is not None:
+            self._track(task)

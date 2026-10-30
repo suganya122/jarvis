@@ -54,6 +54,8 @@ class TurnsMixin:
     _speaking: bool
     _barge: BargeIn | None
     _saying: str
+    _carry: str = ""
+    """The words of a request that was cut off before it answered: the start of the next one."""
     _lead_in: list[str]
     _echo_of: str
     _said_at: float
@@ -130,7 +132,15 @@ class TurnsMixin:
 
     async def _take_speculation(self) -> object | None:
         task, self._spec, self._spec_text = self._spec, None, ""
-        return await task if task is not None else None
+        if task is None:
+            return None
+        try:
+            return await task
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # starting early is only a head start: the request runs without it
+            log.warning("the early start failed; running the request normally", exc_info=True)
+            return None
 
     async def _drop_speculation(self) -> None:
         task, self._spec, self._spec_text = self._spec, None, ""
@@ -153,6 +163,8 @@ class TurnsMixin:
             on_cut_in=self.interrupt,
         )
         self._barge, self._saying = barge, ""
+        if self._carry:  # they went on talking before it answered: one request, not two halves
+            text, self._carry = f"{self._carry} {text}", ""
         watch = asyncio.create_task(barge.run())
         try:
             reply = await self._turn(text, await self._take_speculation())
@@ -162,6 +174,8 @@ class TurnsMixin:
             await asyncio.gather(watch, return_exceptions=True)
         if barge.cut_in:
             self._lead_in, self._echo_of = list(barge.frames), self._saying
+            if not self._saying.strip():  # nothing said yet: they paused to think, then carried on
+                self._carry = text
             return None
         return reply
 
@@ -262,17 +276,22 @@ class TurnsMixin:
     async def _ask_approval(self, msg: ApprovalRequested) -> None:
         """Asked aloud; a spoken yes/no or the overlay card's buttons answer it, whichever is first."""
         self.state = "approval"
-        await self._say(approval_question(msg))
-        for attempt in range(2):
-            heard = await self._hear(wake=False, first_word_s=APPROVAL_LISTEN_S, silence_s=APPROVAL_SILENCE_S)
-            verdict = yes_no(heard or "")
-            if verdict is not None:
-                self._d.resolve_approval(msg.approval_id, verdict)
-                return
-            if attempt == 0 and heard:
-                await self._say("Sorry, yes or no?")
-        self._d.resolve_approval(msg.approval_id, False)  # no clear answer: not approved
-        await self._say("I'll leave that for now.")
+        try:
+            await self._say(approval_question(msg))
+            for attempt in range(2):
+                heard = await self._hear(
+                    wake=False, first_word_s=APPROVAL_LISTEN_S, silence_s=APPROVAL_SILENCE_S
+                )
+                verdict = yes_no(heard or "")
+                if verdict is not None:
+                    self._d.resolve_approval(msg.approval_id, verdict)
+                    return
+                if attempt == 0 and heard:
+                    await self._say("Sorry, yes or no?")
+            self._d.resolve_approval(msg.approval_id, False)  # no clear answer: not approved
+            await self._say("I'll leave that for now.")
+        finally:
+            self.state = "thinking"  # back to the request: talking over it works again
 
 
 SERIOUS = {

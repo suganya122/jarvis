@@ -3,6 +3,7 @@ process without secrets, kept across restarts, and never built without asking.""
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -177,3 +178,46 @@ def test_building_always_asks_and_never_happens_in_the_background() -> None:
     assert decide(tool="ability_greet", full_automation=True, **common).action == "allow"
     tainted = {**common, "tainted": True, "session_grants": set()}
     assert decide(tool="ability_greet", full_automation=True, **tainted).action == "ask"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS's sandbox")
+def test_on_a_mac_an_ability_cannot_read_jarvis_s_own_data(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    (data / "abilities").mkdir(parents=True)
+    (data / "assistant.sqlite3").write_text("private chats")
+    code = (
+        "from pathlib import Path\n"
+        "def run(args: dict) -> str:\n"
+        "    mine = Path(__file__).with_name('note.txt')\n"
+        "    mine.write_text('mine')\n"
+        "    try:\n"
+        "        Path(args['other']).read_text()\n"
+        "        return 'read it: ' + mine.read_text()\n"
+        "    except OSError:\n"
+        "        return 'blocked: ' + mine.read_text()\n"
+    )
+    folder = data / "abilities" / "greet"
+    save(built(code), folder)
+    ran = asyncio.run(ability_runner.run(folder, {"other": str(data / "assistant.sqlite3")}))
+    assert ran.ok and ran.output == "blocked: mine", ran.output
+
+
+def test_what_an_ability_returns_is_never_taken_as_instructions(tmp_path: Path) -> None:
+    from core.abilities.tools import AbilityTool
+
+    save(built(), tmp_path / "greet")
+    result = asyncio.run(AbilityTool(built(), tmp_path / "greet").run({"name": "x"}, CTX))
+    assert result.ok and result.trust is Trust.UNTRUSTED
+
+
+def test_an_ability_that_sends_or_pays_is_not_run_before_the_user_sees_it(tmp_path: Path) -> None:
+    code = "def run(args: dict) -> str:\n    raise SystemExit('it ran')\n"
+    provider = FakeProvider(reply=reply({**MANIFEST, "risk": "external_send"}, code))
+
+    async def go() -> None:
+        registry = ToolRegistry()
+        Abilities(tmp_path, registry, lambda: provider, no_cost)
+        result = await registry.get("build_ability").run({"goal": "send my report"}, CTX)  # type: ignore[union-attr]
+        assert result.ok and "not test-run" in result.output
+
+    asyncio.run(go())

@@ -25,6 +25,8 @@ class ToolAssessment(ContractModel):
     """One line a person can approve or deny, e.g. 'Overwrite ~/notes.txt (2.1 KB)'."""
     error: str | None = None
     """Set when the call can't run at all (invalid args, path outside allowed folders)."""
+    capabilities: tuple[Capability, ...] = ()
+    """What this call does beyond the tool's own (Enter in a terminal runs a command: shell.run)."""
 
 
 class ToolResult(ContractModel):

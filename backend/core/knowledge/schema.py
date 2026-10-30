@@ -4,7 +4,7 @@ name the relations in their life ("my brother").
 The vocabulary is closed on purpose: the model that learns facts must pick from this list, so a
 sentence it was merely shown can't become a new kind of fact, and "lives in" always means the same."""
 
-import re
+import unicodedata
 from dataclasses import dataclass
 
 SELF_ID = "self"
@@ -102,5 +102,7 @@ class Fact:
 
 
 def norm(text: str) -> str:
-    """Comparable form of a name: lower case, letters and digits, single spaces."""
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.casefold()).split())
+    """Comparable form of a name: lower case, letters (with their vowel signs) and digits of any
+    script, single spaces. Everything else (punctuation, symbols) is a space."""
+    kept = "".join(c if unicodedata.category(c)[0] in "LMN" else " " for c in text.casefold())
+    return " ".join(kept.split())

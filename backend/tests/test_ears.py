@@ -207,3 +207,26 @@ def test_the_nicest_english_mac_voice_is_chosen() -> None:
     assert (
         best_mac_voice("Albert   en_US    # Hello", "en_US") is None
     )  # only basic voices: the system's choice
+
+
+def test_the_audio_process_restarting_mid_sentence_ends_the_sentence_not_the_conversation() -> None:
+    """It used to cancel what was being said, which ended the whole hands-free loop: deaf until relaunch."""
+    import asyncio
+
+    from core.ears_host import EarsHost
+
+    async def go() -> None:
+        host = EarsHost(lambda *_: None)
+        sent: list[object] = []
+
+        async def send(msg: object) -> None:
+            sent.append(msg)
+
+        host._process.send = send  # type: ignore[method-assign]
+        host._spawn = lambda coro: coro.close()  # type: ignore[method-assign]  # no real restart here
+        saying = asyncio.create_task(host.say("Here is your answer."))
+        await asyncio.sleep(0)
+        host._on_exit(2)  # the audio helper stopped while speaking
+        assert await saying is False  # a sentence that didn't finish, not an error
+
+    asyncio.run(go())

@@ -1,7 +1,7 @@
 """The model's tools for projects: save what it has understood, and look a project up."""
 
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -17,7 +17,7 @@ class _Args(BaseModel):
 class SaveArgs(_Args):
     name: str = Field(min_length=2, max_length=80, description="Short name, e.g. 'Bakery website'.")
     idea: str = Field(default="", max_length=2_000, description="The idea in the user's words (first save).")
-    learned: list[str] = Field(
+    learned: list[Annotated[str, Field(max_length=300)]] = Field(
         default_factory=list,
         max_length=20,
         description="New things understood: answers, decisions, features, preferences (one each).",
@@ -56,13 +56,14 @@ def _parse[M: BaseModel](model: type[M], args: dict[str, Any]) -> M | str:
 
 
 def describe(p: Project, brief: bool = False) -> str:
+    """Where it stands first (that must never be cut off), then what it is and what was understood."""
     parts = [f"{p.name} [{p.status}{' with ' + p.built_with if p.built_with else ''}]"]
-    if p.idea:
-        parts.append(f"idea: {p.idea}")
-    if p.learned:
-        parts.append("understood: " + "; ".join(p.learned))
     if p.detail:
         parts.append(f"now: {p.detail}")
+    if p.idea:
+        parts.append(f"idea: {p.idea if brief else p.idea[:300]}")
+    if p.learned:
+        parts.append("understood: " + "; ".join(p.learned if brief else [x[:200] for x in p.learned]))
     if p.brief:
         parts.append(f"brief:\n{p.brief}" if brief else f"brief written ({len(p.brief)} characters)")
     return " — ".join(parts)
@@ -97,7 +98,7 @@ class SaveProject:
         a = _parse(SaveArgs, args)
         if isinstance(a, str):
             return ToolResult(ok=False, output=a)
-        project = await self._store.find(a.name) or await self._store.add(a.name, a.idea)
+        project = await self._store.named(a.name) or await self._store.add(a.name, a.idea)
         if a.idea and not project.idea:
             project.idea = a.idea
         known = {x.casefold() for x in project.learned}
@@ -108,13 +109,13 @@ class SaveProject:
         for key in ("brief", "built_with", "watch_window", "working_marker", "detail"):
             if value := getattr(a, key):
                 setattr(project, key, value)
-        if a.status is not None:
-            project.status = a.status
-        if project.status == "sent" and not project.watch_window:
+        if a.status in WATCHED and not project.watch_window:
             return ToolResult(
                 ok=False, output="Say which window to watch (part of its title), then save it as sent."
             )
         await self._store.save(project)
+        if a.status is not None:  # a new step: any check the watcher had queued is superseded
+            await self._store.update(project, status=a.status, review_due=False)
         if project.status in WATCHED:
             self._on_sent()
             return ToolResult(

@@ -25,8 +25,8 @@ HEADER = (
     "Projects the user is working on with you (kept until done; they can come back to any of them at "
     "any time, even after other requests in between, so carry on from where each one is):"
 )
-MAX_SHOWN = 5
-MAX_CHARS = 4_000
+MAX_SHOWN = 12
+MAX_CHARS = 6_000
 
 ContextFn = Callable[[str], Awaitable[str]]
 __all__ = ["Projects", "RuntimeHost"]
@@ -36,7 +36,9 @@ class Projects:
     def __init__(self, conn: aiosqlite.Connection, registry: ToolRegistry, host: Host) -> None:
         self.store = ProjectStore(conn)
         reviewer = Reviewer(self.store, host)
-        self.watcher = ProjectWatcher(self.store, registry, host.tell, reviewer.review, MAX_ROUNDS)
+        self.watcher = ProjectWatcher(
+            self.store, registry, host.tell, reviewer.review, MAX_ROUNDS, host.track
+        )
         for tool in (SaveProject(self.store, lambda: self.watcher.start()), ProjectStatus(self.store)):
             registry.register(tool)
 
@@ -44,7 +46,7 @@ class Projects:
         active = (await self.store.active())[:MAX_SHOWN]
         if not active:
             return ""
-        each = MAX_CHARS // len(active)  # one project gets it all; five share it
+        each = MAX_CHARS // len(active)  # one project gets it all; several share it
         lines = [f"- {describe(p)}"[:each] for p in active]
         return HEADER + "\n" + "\n".join(lines)
 

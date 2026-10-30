@@ -47,6 +47,7 @@ class FakeHost:
         self.told: list[tuple[str, str]] = []
         self.sends: list[ChatSend] = []
         self.free = True
+        self.tracked: list[Any] = []
         self.reply = "Claude built it; I've asked it to test everything and polish the design."
 
         host = self
@@ -64,6 +65,9 @@ class FakeHost:
 
     def can_follow_up(self) -> bool:
         return self.free
+
+    def track(self, task: Any) -> None:
+        self.tracked.append(task)
 
     async def broadcast(self, message: Any) -> None:
         return None
@@ -106,7 +110,7 @@ async def test_a_project_is_understood_step_by_step_and_never_forgotten(conn: An
     await rig.save(name="Bakery website", idea="a site for my mom's bakery; order cakes on WhatsApp")
     await rig.save(name="bakery website", learned=["customers in Chennai, mostly on phones"])
     await rig.save(
-        name="Bakery",
+        name="Bakery website",
         learned=["orders only on WhatsApp, no online payment", "orders only on WhatsApp, no online payment"],
     )
 
@@ -139,7 +143,7 @@ async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(conn: An
     await rig.save(name="Bakery website", idea="site", status="sent", built_with="Claude",
                    watch_window="Claude", working_marker="Stop")  # fmt: skip
     await rig.projects.watcher.poll()
-    assert rig.controls.calls[0] == {"window_id": "w2", "query": "Stop", "limit": 3}  # the Claude window
+    assert rig.controls.calls[0] == {"window_id": "w2", "query": "Stop", "limit": 10}  # the Claude window
     assert "[working with Claude]" in await rig.projects.context()
     rig.host.free = False  # the user is talking to Jarvis: the check waits
     for _ in range(3):
@@ -154,11 +158,13 @@ async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(conn: An
     await rig.settle()
     (send,) = rig.host.sends
     assert send.session_id == "project-session"
-    assert "round 1 of 3" in send.text and "not a new request" in send.text
+    assert "round 1:" in send.text and "not a new request" in send.text and "0 errors and 0 bugs" in send.text
     assert "fix every bug" in send.text and "professional, modern, attractive" in send.text
+    assert "check it yourself; never take its report alone" in send.text and "they can try it now" in send.text
+    assert send.force_model and rig.host.tracked  # the kill switch can stop it
     assert rig.told[-1] == ("Bakery website", rig.host.reply)  # what it did, said to the user
     status = await rig.registry.get("project_status").run({"name": "Bakery"}, CTX)  # type: ignore[union-attr]
-    assert "[reviewing with Claude]" in status.output
+    assert "[answered with Claude] — now: Waiting for you." in status.output  # it sent nothing: it waits
     await rig.projects.watcher.poll()
     await rig.settle()
     assert len(rig.host.sends) == 1  # one check per stop
@@ -176,8 +182,7 @@ async def test_after_the_last_round_it_only_tells_the_user(conn: Any) -> None:
     )
     project = await rig.projects.store.find("Bakery website")
     assert project is not None
-    project.rounds = MAX_ROUNDS
-    await rig.projects.store.save(project)
+    await rig.projects.store.update(project, rounds=MAX_ROUNDS)
     for _ in range(3):
         await rig.projects.watcher.poll()
     await rig.settle()
@@ -250,3 +255,52 @@ def test_the_permission_tool_never_runs_from_the_background() -> None:
 
     assert {"setup_permission", "paste_text"} <= FOCUS_STEALING_TOOLS
     assert asyncio.iscoroutinefunction(setup_tool.SetupPermission.run)
+
+
+async def test_similar_names_are_different_projects_and_done_ones_stay_done(conn: Any) -> None:
+    rig = Rig(conn, [LISTING], ["No matching controls."])
+    rig.projects.watcher.start = lambda: None  # type: ignore[method-assign]
+    await rig.save(name="App", idea="a todo app")
+    await rig.save(name="Recipe app", idea="recipes", learned=["vegetarian"])
+    names = sorted(p.name for p in await rig.projects.store.all())
+    assert names == ["App", "Recipe app"]  # not merged into "App"
+    await rig.save(name="Recipe app", status="done")
+    await rig.save(name="Recipe app", idea="a new recipe app")  # the same name again: a fresh project
+    fresh = await rig.projects.store.named("Recipe app")
+    assert fresh is not None and fresh.status == "understanding" and fresh.learned == []
+    assert await rig.projects.store.find("   ") is None
+
+
+async def test_every_unfinished_project_is_in_context_with_where_it_stands_first(conn: Any) -> None:
+    rig = Rig(conn, [LISTING], ["No matching controls."])
+    for n in range(8):
+        await rig.save(name=f"Project {n}", idea="x" * 900, learned=["y" * 290] * 5, detail=f"step {n}")
+    context = await rig.projects.context()
+    assert all(f"Project {n} [understanding] — now: step {n}" in context for n in range(8))
+
+
+async def test_a_check_cut_short_by_a_restart_is_done_again(conn: Any) -> None:
+    rig = Rig(conn, [LISTING], ["No matching controls."])
+    await rig.save(
+        name="Bakery website",
+        status="sent",
+        built_with="Claude",
+        watch_window="Claude",
+        working_marker="Stop",
+    )
+    project = await rig.projects.store.named("Bakery website")
+    assert project is not None
+    await rig.projects.store.update(project, status="reviewing")  # the daemon stopped mid-check
+    again = Rig(conn, [LISTING], ["No matching controls."])
+    await again.projects.watcher.poll()
+    await again.settle()
+    assert len(again.host.sends) == 1
+
+
+def test_the_working_sign_is_a_control_not_the_title() -> None:
+    from core.projects.watch import shows
+
+    assert shows("e4  button 'Stop response'", "Stop")
+    assert not shows("e1  button 'Stopwatch'", "Stop")
+    assert not shows("No matching controls.", "Stop")
+    assert shows("e1  text area 'shell' text='✻ Working… (12s · esc to interrupt)'", "esc to interrupt")

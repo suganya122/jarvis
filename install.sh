@@ -235,9 +235,9 @@ if [ "$OS" = mac ]; then
 </dict></plist>
 PLIST
   swiftc -O "$SRC"/*.swift -o "$APP/Contents/MacOS/$NAME" || die "Couldn't build $NAME.app (are Apple's command line tools installed?)"
+  printf '%s' "$STAMP" > "$STAMP_FILE"  # before signing: a file added afterwards breaks the signature
   codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
-  printf '%s' "$STAMP" > "$STAMP_FILE"
   # The old build's Accessibility entry would stay switched on but no longer apply (macOS matches
   # the exact build). Clearing it makes macOS ask afresh when Jarvis starts.
   if tccutil reset Accessibility local.assistant.jarvis >/dev/null 2>&1; then

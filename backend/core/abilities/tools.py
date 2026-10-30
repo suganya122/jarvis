@@ -13,8 +13,6 @@ from core.abilities.builder import Builder
 from core.abilities.spec import AbilitySpec
 
 PREFIX = "ability_"
-OUTSIDE = frozenset({Capability.NET_FETCH, Capability.FS_READ, Capability.SCREEN_READ})
-"""What it returns from these is outside content: data, never instructions."""
 
 
 class _Args(BaseModel):
@@ -63,8 +61,10 @@ class AbilityTool:
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ran = await runner.run(self._folder, args)
-        trust = Trust.UNTRUSTED if OUTSIDE & set(self.spec.capabilities) else Trust.USER
-        return ToolResult(ok=ran.ok, output=ran.output or ("Done." if ran.ok else "It failed."), trust=trust)
+        # New code may fetch or read anything, declared or not: what it returns is data, never instructions.
+        return ToolResult(
+            ok=ran.ok, output=ran.output or ("Done." if ran.ok else "It failed."), trust=Trust.UNTRUSTED
+        )
 
 
 class BuildAbility:

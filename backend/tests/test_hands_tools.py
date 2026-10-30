@@ -194,3 +194,37 @@ async def test_paste_puts_long_text_in_whole_and_gives_the_clipboard_back(
     env.set_clipboard = lambda _: False  # nowhere to paste from: says so, and how else to do it
     refused = await T.PasteText().run(T.PasteArgs(window_id="w1", text="x"), env)
     assert not refused.ok and "type_text" in refused.output
+
+
+def test_buttons_that_pay_or_delete_ask_however_they_are_worded() -> None:
+    from workers.hands.risk import MONEY
+
+    paying = ("Place your order", "Request UberGo", "Confirm UberX", "Complete purchase", "Confirm payment")
+    for label in paying:
+        assert label_risk(label) is RiskLevel.PURCHASE, label
+    assert label_risk("Send money") is RiskLevel.PURCHASE
+    assert MONEY.search("₹1,200") and MONEY.search("Pay 450 rupees") and MONEY.search("₨ 300")
+    assert label_risk("Move to Trash") is RiskLevel.DESTRUCTIVE
+    assert label_risk("Open book") is RiskLevel.WRITE and label_risk("Facebook") is RiskLevel.WRITE
+    for combo in ("cmd+backspace", "cmd+shift+backspace", "cmd+q", "cmd+w"):
+        assert key_risk(parse_combo(combo)) is RiskLevel.DESTRUCTIVE, combo
+    assert key_risk(["delete"], "Finder — Downloads") is RiskLevel.DESTRUCTIVE
+    assert key_risk(["delete"], "TextEdit — notes") is RiskLevel.WRITE
+
+
+def test_a_command_typed_into_a_shell_counts_as_running_a_command() -> None:
+    from contracts.common import Capability
+
+    assert T._command("Terminal — zsh", "rm -rf ~\n") == (Capability.SHELL_RUN,)
+    assert T._command("Terminal — expense-tracker — claude", "Build it\n") == ()  # Claude Code, not a shell
+    assert T._command("Terminal — zsh", "ls") == ()  # not run until Enter
+    assert T._command("Google Chrome — Claude", "a\nb") == ()
+
+
+def test_mac_password_fields_and_disabled_controls_are_seen_as_such() -> None:
+    from contracts.hands import ElementInfo
+
+    secure = ElementInfo(element_id="x", role="text field", name="Password", states=["password"])
+    assert T.is_secret(secure)
+    plain = ElementInfo(element_id="y", role="text field", name="Search", states=[])
+    assert not T.is_secret(plain)

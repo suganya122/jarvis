@@ -105,7 +105,8 @@ jobs:
           set -euo pipefail
           tag="$GITHUB_REF_NAME"; repo="$GITHUB_REPOSITORY"
           retry() { for try in 1 2 3 4 5; do "$@" && return 0; echo "attempt $try failed; retrying"; sleep $((try * 15)); done; return 1; }
-          gh release view "$tag" --repo "$repo" >/dev/null 2>&1 \
-            || retry gh release create "$tag" --repo "$repo" --draft --verify-tag --generate-notes
+          # Each try first looks: a create GitHub did but answered 500 to is found, not made again.
+          retry sh -c 'gh release view "$0" --repo "$1" >/dev/null 2>&1 \
+            || gh release create "$0" --repo "$1" --draft --verify-tag --generate-notes' "$tag" "$repo"
           for file in dist/*; do retry gh release upload "$tag" "$file" --repo "$repo" --clobber; done
           retry gh release edit "$tag" --repo "$repo" --draft=false --latest

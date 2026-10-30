@@ -9,9 +9,7 @@ Everything the user says while idle is transcribed on this computer and thrown a
 starts with the wake word. While it thinks and speaks a second listener (hands_free_barge) lets
 the person cut in; its own voice coming back is told apart by what it's saying.
 
-Approvals: ordinary changes can be answered "yes" / "no". Sends, purchases and anything
-influenced by outside content (web pages, files) need a click on the overlay card, so a
-misheard word or a TV can never send or pay.
+Approvals (paying, deleting): a spoken "yes" / "no" answers them, or the overlay card's buttons.
 """
 
 import asyncio
@@ -201,7 +199,7 @@ class HandsFree(TurnsMixin):
         """ack: "Yes?" when called by name alone (not for the talk key: the box shows it's listening)."""
         silence_s = self._d.settings().silence_s
         live = self._d.settings().stay_live
-        self._offline = False
+        self._offline = self._woken = False  # a talk-key press from before is used up
         pending: str | None = text
         while True:
             if pending is None:  # live and nothing (usable) heard: keep listening
@@ -229,6 +227,7 @@ class HandsFree(TurnsMixin):
             self.state = "listening"
             follow_up = None if live else self._d.settings().follow_up_s
             heard = await self._hear(wake=False, first_word_s=follow_up, silence_s=silence_s, speculate=True)
+            self._woken = False  # pressed mid-conversation: it was already listening
             if heard is None:
                 if live and not self._offline and self._blocker() is None:
                     pending = None

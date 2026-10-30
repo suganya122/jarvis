@@ -60,6 +60,10 @@ def _row(row: aiosqlite.Row) -> Project:
     )
 
 
+def _key(name: str) -> str:
+    return " ".join(name.casefold().split())
+
+
 class ProjectStore:
     def __init__(self, conn: aiosqlite.Connection) -> None:
         self._conn = conn
@@ -77,16 +81,16 @@ class ProjectStore:
         return project
 
     async def save(self, project: Project) -> None:
+        """What the model writes: the content. Status and the watcher's fields change only through
+        update(), so neither side can put back an older copy of the other's."""
         project.updated_at = time.time()
         project.learned = project.learned[-MAX_LEARNED:]
         await self._conn.execute(
             "UPDATE projects SET name=?, idea=?, learned=?, brief=?, built_with=?, watch_window=?, "
-            "working_marker=?, status=?, detail=?, updated_at=?, rounds=?, review_due=?, session_id=? "
-            "WHERE id=?",
+            "working_marker=?, detail=?, updated_at=? WHERE id=?",
             (
                 project.name, project.idea, json.dumps(project.learned), project.brief, project.built_with,
-                project.watch_window, project.working_marker, project.status, project.detail,
-                project.updated_at, project.rounds, int(project.review_due), project.session_id, project.id,
+                project.watch_window, project.working_marker, project.detail, project.updated_at, project.id,
             ),
         )  # fmt: skip
         await self._conn.commit()
@@ -114,14 +118,19 @@ class ProjectStore:
     async def active(self) -> list[Project]:
         return [p for p in await self.all() if p.status != "done"]
 
+    async def named(self, name: str) -> Project | None:
+        """The unfinished project with exactly this name (case and spacing aside)."""
+        wanted = _key(name)
+        return next((p for p in await self.active() if wanted and _key(p.name) == wanted), None)
+
     async def find(self, name: str) -> Project | None:
-        """By name: exact first, then the most recent one whose name contains it (or the reverse)."""
-        wanted = " ".join(name.casefold().split())
-        projects = await self.all()
-        for p in projects:
-            if p.name.casefold() == wanted:
-                return p
-        return next((p for p in projects if wanted in p.name.casefold() or p.name.casefold() in wanted), None)
+        """For looking one up: exact first, then one whose name contains the words; unfinished first."""
+        wanted = _key(name)
+        if not wanted:
+            return None
+        projects = sorted(await self.all(), key=lambda p: p.status == "done")
+        exact = next((p for p in projects if _key(p.name) == wanted), None)
+        return exact or next((p for p in projects if wanted in _key(p.name)), None)
 
     async def delete(self, project_id: str) -> bool:
         cur = await self._conn.execute("DELETE FROM projects WHERE id=?", (project_id,))

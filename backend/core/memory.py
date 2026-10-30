@@ -80,13 +80,23 @@ def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9']+", text.casefold()) if len(w) > 2 and w not in _STOP}
 
 
+STANDING = re.compile(r"\b(always|never|from now on|every time|don'?t|do not|make sure|call me)\b", re.I)
+"""A note that says how the user wants things done applies to every request."""
+
+
 def select(memories: list[Memory], request: str, max_chars: int) -> list[Memory]:
     """Which memories to show the model for this request, in their saved order."""
     if sum(len(m.text) + 3 for m in memories) <= max_chars:
         return memories
     wanted = _words(request)
-    ranked = sorted(
-        enumerate(memories), key=lambda im: (len(wanted & _words(im[1].text)), im[1].created_at), reverse=True
+    ranked = sorted(  # how they want things done first, whatever the request; then what it mentions
+        enumerate(memories),
+        key=lambda im: (
+            bool(STANDING.search(im[1].text)),
+            len(wanted & _words(im[1].text)),
+            im[1].created_at,
+        ),
+        reverse=True,
     )
     picked: list[tuple[int, Memory]] = []
     used = 0

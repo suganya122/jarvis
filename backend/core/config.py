@@ -102,11 +102,6 @@ class ToolSettings(BaseModel):
     always do. Sends still ask for requests that came from a chat app and for unattended routines.
     Off: every send asks, and so does any app control after reading outside content."""
 
-    @field_validator("policies")
-    @classmethod
-    def _upgrade_old_default(cls, value: dict[Capability, PolicyMode]) -> dict[Capability, PolicyMode]:
-        return default_policies() if _was_old_default(value) else value
-
     allowed_roots: list[str] = Field(default_factory=lambda: ["~"])
     denied_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_DENIED_PATHS))
     shell_allowlist: list[str] = Field(default_factory=lambda: list(DEFAULT_SHELL_ALLOWLIST))
@@ -297,7 +292,7 @@ class PluginSettings(BaseModel):
     messages_per_minute: int = Field(default=10, ge=1, le=120)
 
 
-DEFAULTS_VERSION = 2
+DEFAULTS_VERSION = 3
 """Bumped when a default changes in a way saved settings should pick up once (see upgrade_saved)."""
 
 
@@ -310,6 +305,15 @@ def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
         data["default_tier"] = "balanced"
     if data.get("defaults_version", 0) < 2 and isinstance(data.get("skills"), dict):
         data["skills"] = {**data["skills"], "learn": False}
+    tools = data.get("tools")
+    old = data.get("defaults_version", 0) < 3
+    if old and isinstance(tools, dict) and isinstance(tools.get("policies"), dict):
+        try:  # an earlier default nobody chose; done once, so a strict choice made later is kept
+            saved = {Capability(k): v for k, v in tools["policies"].items()}
+        except ValueError:
+            saved = {}
+        if _was_old_default(saved):
+            data["tools"] = {**tools, "policies": {c.value: m for c, m in default_policies().items()}}
     return {**data, "defaults_version": DEFAULTS_VERSION}
 
 

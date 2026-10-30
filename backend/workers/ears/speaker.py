@@ -136,26 +136,34 @@ class Speaker:
             ok, detail = False, "stopped"
         self._done(EarsSaid(say_id=msg.say_id, ok=ok, detail=detail, voice=voice))
 
-    def _spawn(self, argv: list[str], stdout: int | IO[Any]) -> subprocess.Popen[bytes]:
+    def _spawn(self, argv: list[str], stdout: int | IO[Any], gen: int) -> subprocess.Popen[bytes]:
         proc = subprocess.Popen(  # noqa: S603 - fixed program names and paths, no shell
             argv, stdin=subprocess.PIPE, stdout=stdout, stderr=subprocess.DEVNULL
         )
         with self._lock:
-            self._proc = proc
+            if self._current(gen):
+                self._proc = proc
+            else:  # "wait" came while it was starting: stop() had nothing to stop yet
+                proc.terminate()
         return proc
 
     def _pipe(self, argv: list[str], text: str, gen: int) -> bool:
-        proc = self._spawn(argv, subprocess.DEVNULL)
+        if not self._current(gen):
+            return False
+        proc = self._spawn(argv, subprocess.DEVNULL, gen)
         assert proc.stdin is not None
-        proc.stdin.write(text.encode("utf-8"))
-        proc.stdin.close()
+        with contextlib.suppress(BrokenPipeError):  # stopped as it started
+            proc.stdin.write(text.encode("utf-8"))
+            proc.stdin.close()
         proc.wait()
         return self._current(gen) and proc.returncode == 0
 
     def _piper(self, msg: EarsSay, gen: int) -> bool:
         import sounddevice as sd
 
-        proc = self._spawn([msg.piper, "--model", msg.voice, "--output-raw"], subprocess.PIPE)
+        if not self._current(gen):
+            return False
+        proc = self._spawn([msg.piper, "--model", msg.voice, "--output-raw"], subprocess.PIPE, gen)
         assert proc.stdin is not None and proc.stdout is not None
         proc.stdin.write(msg.text.encode("utf-8") + b"\n")
         proc.stdin.close()

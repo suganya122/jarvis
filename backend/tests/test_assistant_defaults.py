@@ -5,7 +5,7 @@ asks first only before spending money or deleting. Sends still ask when nobody i
 import pytest
 
 from contracts.common import Capability, RiskLevel
-from core.config import Settings, ToolSettings
+from core.config import Settings, ToolSettings, upgrade_saved
 from core.policy import decide
 
 pytestmark = pytest.mark.real_defaults
@@ -83,18 +83,26 @@ def test_after_reading_outside_content_only_commands_and_file_changes_ask() -> N
     assert ask("create_routine", RiskLevel.WRITE, Capability.SCHEDULE, tainted=True) == "ask"
 
 
+def saved_with(policies: dict[Capability, str], version: int = 2) -> Settings:
+    data = {"defaults_version": version, "tools": {"policies": {c.value: m for c, m in policies.items()}}}
+    return Settings.model_validate(upgrade_saved(data))
+
+
 def test_settings_saved_with_the_old_ask_everything_default_are_upgraded() -> None:
     old = {c: ("allow" if c is Capability.FS_READ else "ask") for c in Capability}
-    assert ToolSettings(policies=old).policies == Settings().tools.policies
+    assert saved_with(old).tools.policies == Settings().tools.policies
     chosen = {**Settings().tools.policies, Capability.BROWSER: "ask"}  # the user's own choice stays
-    assert ToolSettings(policies=chosen).policies[Capability.BROWSER] == "ask"
+    assert saved_with(chosen).tools.policies[Capability.BROWSER] == "ask"
+    # Once upgraded, choosing that same strict setting yourself is kept: it isn't "upgraded" again.
+    assert saved_with(old, version=3).tools.policies == old
+    assert ToolSettings(policies=old).policies == old
 
 
 def test_settings_saved_with_the_0_1_10_defaults_are_upgraded_too() -> None:
     second = {
         c: ("ask" if c in (Capability.SEND_EXTERNAL, Capability.PURCHASE) else "allow") for c in Capability
     }
-    assert ToolSettings(policies=second).policies == Settings().tools.policies
+    assert saved_with(second).tools.policies == Settings().tools.policies
     assert Settings().tools.policies[Capability.SEND_EXTERNAL] == "allow"
     assert Settings().tools.policies[Capability.PURCHASE] == "ask"
     assert Settings().tools.full_automation is True

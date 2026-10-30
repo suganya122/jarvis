@@ -178,7 +178,7 @@ class ToolExecutor:
         decision = decide(
             tool=call.name,
             risk=assessment.risk,
-            capabilities=tool.info.capabilities,
+            capabilities=(*tool.info.capabilities, *assessment.capabilities),
             policies=settings.policies,
             tainted=perms.tainted,
             session_grants=perms.grants,

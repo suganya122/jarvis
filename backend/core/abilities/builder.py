@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from contracts.common import RiskLevel
 from contracts.model import (
     ChatMessage,
     Completed,
@@ -27,6 +28,8 @@ from core.abilities import runner
 from core.abilities.spec import DECLARABLE, MAX_PACKAGES, AbilitySpec, check, save
 
 ROUNDS = 3
+UNTESTED = frozenset({RiskLevel.EXTERNAL_SEND, RiskLevel.DESTRUCTIVE, RiskLevel.PURCHASE})
+"""Not run before the user has seen what it is: it would send, delete or pay for real."""
 IMPOSSIBLE = "impossible: "
 SYSTEM = f"""You write abilities for a personal assistant running on the user's own computer
 ({platform.system()} {platform.machine()}, Python {sys.version_info.major}.{sys.version_info.minor}).
@@ -52,7 +55,7 @@ Reply with a JSON object, then the code in one ```python block, and nothing else
   services that need no key. Never ask for or embed API keys, passwords or tokens.
 - "test_args": arguments for a harmless test run that proves it works. It runs straight
   away, so it must not send, delete, buy, or change anything that matters.
-- It runs in its own process with a 2 minute limit and no access to the assistant's secrets.
+- It runs in its own process with a 2 minute limit. Never read the assistant's own files or settings.
 If what was asked isn't possible at all, reply only {{"impossible": "why, in one sentence"}}."""
 
 FENCE = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL)
@@ -131,7 +134,12 @@ class Builder:
             installed = await runner.install(spec.packages, staging)
             if not installed.ok:
                 return None, f"installing {', '.join(spec.packages)} failed: {installed.output}"
-            ran = await runner.run(staging, spec.test_args)
+            if spec.risk in UNTESTED:  # it would send, delete or pay: its first real use asks the user
+                ran = runner.Ran(
+                    True, "not test-run, since it can send, delete or pay; the first use will ask"
+                )
+            else:
+                ran = await runner.run(staging, spec.test_args)
             if not ran.ok:
                 return None, f"the test run failed: {ran.output}"
             final = self._folder / spec.name

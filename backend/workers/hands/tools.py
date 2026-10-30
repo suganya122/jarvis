@@ -9,6 +9,7 @@ from pydantic import Field
 from contracts.common import Capability, RiskLevel, Trust
 from contracts.hands import ActionResult, ElementInfo
 from contracts.tools import ToolAssessment, ToolResult
+from workers.common import clipboard
 from workers.common.base import Args, truncate
 from workers.common.base import WorkerTool as _WorkerTool
 from workers.hands import uinput
@@ -23,7 +24,7 @@ from workers.hands.locate import (
     element_meta,
     window_meta,
 )
-from workers.hands.risk import MONEY, key_risk, label_risk
+from workers.hands.risk import MONEY, key_risk, label_risk, runs_commands
 
 WORKER_NAME = "hands"
 
@@ -41,7 +42,9 @@ def _element_line(env: HandsEnv, info: ElementInfo, window_label: str, window_me
     if info.role == "password text":
         parts.append("(password: hidden)")
     flags: list[str] = [s for s in ("checked", "focused", "selected", "expanded") if s in info.states]
-    if "sensitive" not in info.states and "enabled" not in info.states:
+    if "disabled" in info.states or (
+        sys.platform != "darwin" and "sensitive" not in info.states and "enabled" not in info.states
+    ):  # AT-SPI lists what's enabled; macOS says only what's disabled
         flags.append("disabled")
     if flags:
         parts.append(f"[{', '.join(flags)}]")
@@ -141,7 +144,10 @@ class ClickElement(WorkerTool[ClickArgs]):
         real, label = env.element(args.element_id)[:2]
         info = env.hands.describe(real)
         about = f": {args.about.strip()}" if args.about.strip() else ""
-        risk = RiskLevel.PURCHASE if MONEY.search(args.about) else label_risk(info.name, args.about)
+        shown = " ".join((info.name, info.text or "", args.about))
+        risk = (
+            RiskLevel.PURCHASE if MONEY.search(shown) else label_risk(info.name, info.text or "", args.about)
+        )
         return ToolAssessment(risk=risk, summary=f"Click {label}{about}")
 
     async def run(self, args: ClickArgs, env: HandsEnv) -> ToolResult:
@@ -168,9 +174,9 @@ class TypeText(WorkerTool[TypeArgs]):
         info = env.hands.describe(real)
         preview = args.text if len(args.text) <= 40 else args.text[:40] + "…"
         summary = f"Type “{preview}” into {label}"
-        if info.role == "password text":
+        if is_secret(info):
             return ToolAssessment(risk=self.risk, summary=summary, error="I don't type into password fields")
-        return ToolAssessment(risk=self.risk, summary=summary)
+        return ToolAssessment(risk=self.risk, summary=summary, capabilities=_command(label, args.text))
 
     async def run(self, args: TypeArgs, env: HandsEnv) -> ToolResult:
         real, label, short = env.element(args.element_id)
@@ -193,8 +199,12 @@ class PressKeys(WorkerTool[KeysArgs]):
     def assess(self, args: KeysArgs, env: HandsEnv) -> ToolAssessment:
         _, label = env.window(args.window_id)[:2]
         keys = parse_combo(args.keys)
+        enter = "+".join(keys) in ("enter", "return", "ctrl+m")
         return ToolAssessment(
-            risk=key_risk(keys, label), summary=f"Press {display(keys)} in {label}", error=uinput.available()
+            risk=key_risk(keys, label),
+            summary=f"Press {display(keys)} in {label}",
+            error=uinput.available(),
+            capabilities=_command(label, "\n" if enter else ""),
         )
 
     async def run(self, args: KeysArgs, env: HandsEnv) -> ToolResult:
@@ -324,6 +334,16 @@ class InsertText(WorkerTool[InsertArgs]):
         return _report(f"Typed into {app}", result, env.config.max_output_chars)
 
 
+def is_secret(info: ElementInfo) -> bool:
+    return info.role == "password text" or "password" in info.states
+
+
+def _command(where: str, text: str) -> tuple[Capability, ...]:
+    """Typing a line into a shell and pressing Enter runs a command: it needs shell.run too, so after
+    reading outside content it asks, like any command."""
+    return (Capability.SHELL_RUN,) if "\n" in text and runs_commands(where) else ()
+
+
 class PasteArgs(Args):
     window_id: WindowRef
     text: str = Field(min_length=1, max_length=50_000)
@@ -348,12 +368,17 @@ class PasteText(WorkerTool[PasteArgs]):
         _, label = env.window(args.window_id)[:2]
         preview = args.text if len(args.text) <= 60 else args.text[:60] + "…"
         lines = args.text.count("\n") + 1
-        return ToolAssessment(risk=self.risk, summary=f"Paste “{preview}” ({lines} lines) into {label}")
+        return ToolAssessment(
+            risk=self.risk,
+            summary=f"Paste “{preview}” ({lines} lines) into {label}",
+            capabilities=_command(label, args.text),
+        )
 
     async def run(self, args: PasteArgs, env: HandsEnv) -> ToolResult:
         real, label, short = env.window(args.window_id)
+        await asyncio.to_thread(env.hands.focus, real)  # the field that will get it is that window's
         focused = await asyncio.to_thread(env.hands.focused_element)
-        if focused is not None and focused.role == "password text":
+        if focused is not None and is_secret(focused):
             return ToolResult(ok=False, output="Not pasted: the focused field is a password field.")
         before = await asyncio.to_thread(env.clipboard)
         if not await asyncio.to_thread(env.set_clipboard, args.text):
@@ -365,7 +390,9 @@ class PasteText(WorkerTool[PasteArgs]):
             result = await asyncio.to_thread(env.hands.key, real, combo)
             await asyncio.sleep(PASTE_WAIT_S)
         finally:
-            if before:  # text the user had copied comes back; anything else stays as it is
+            # Their copied text comes back. With nothing (or an image) there before, it's cleared, so
+            # the brief doesn't stay behind; text too long to read whole is left as it was pasted.
+            if before is not None and len(before) < clipboard.MAX_CHARS:
                 await asyncio.to_thread(env.set_clipboard, before)
         chars = len(args.text)
         return _report(

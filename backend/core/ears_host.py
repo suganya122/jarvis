@@ -30,7 +30,9 @@ from core.line_process import LineProcess
 
 log = logging.getLogger(__name__)
 MAX_RESTARTS_PER_HOUR = 10
-"""It restarts itself to recover (e.g. Jarvis.app's audio stopped); past this, something is broken."""
+"""It restarts itself to recover (e.g. Jarvis.app's audio stopped); past this, it rests a while."""
+RETRY_AFTER_S = 600
+MIC_RETRY_S = 30.0
 TEST_HOOKS = ("ASSISTANT_EARS_WAV", "ASSISTANT_EARS_SINK")
 """Tests replace the microphone with WAV files and record speech to a file instead of playing it.
 Child processes don't get `ASSISTANT_*` variables, so these two are passed on by name, here, for
@@ -56,6 +58,7 @@ class EarsHost:
         self._stopping = False
         self._want_mic = False
         self._tasks: set[asyncio.Task[object]] = set()
+        self._reopening: asyncio.Future[None] | None = None
         self.available: bool | None = None  # None until the process reports
         self.detail = "starting"
         self.piper = ""
@@ -75,6 +78,8 @@ class EarsHost:
 
     async def stop(self) -> None:
         self._stopping = True
+        if self._reopening is not None:
+            self._reopening.cancel()
         for future in self._saying.values():
             if not future.done():
                 future.cancel()
@@ -115,6 +120,7 @@ class EarsHost:
             if future is not None and not future.done():
                 future.set_result(msg)
         elif isinstance(msg, EarsMicChosen):
+            self.available = True  # listening again, after a problem too
             self.microphone, self.microphone_reason = msg.microphone.name, msg.reason
             self.detail = msg.microphone.name
             log.info("microphone: %s (%s)", msg.microphone.name, msg.reason)
@@ -125,6 +131,30 @@ class EarsHost:
             self.available, self.detail = False, msg.detail
             log.warning("microphone problem: %s", msg.detail)
             self._on_problem(msg.detail)
+            if self._reopening is None or self._reopening.done():  # one retry loop at a time
+                self._reopening = asyncio.ensure_future(self._reopen_mic_later())
+
+    async def _start_later(self, delay_s: float) -> None:
+        await asyncio.sleep(delay_s)
+        if not self._stopping:
+            self._restarts.clear()
+            await self.start()
+
+    async def _reopen_mic_later(self) -> None:
+        """A microphone problem (unplugged, taken by another app) isn't for ever: try it again.
+        The voice loop turns the mic off while it's unavailable, so this tries it briefly and
+        closes it again unless the loop wants it by then (no mic left on while paused)."""
+        while not self._stopping and not self.available:
+            await asyncio.sleep(MIC_RETRY_S)
+            if self._stopping or self.available:
+                return
+            await self._process.send(EarsListen(on=True, microphone=self._preferred_mic()))
+            for _ in range(50):
+                if self.available:
+                    break
+                await asyncio.sleep(0.1)
+            if not self._want_mic:
+                await self._process.send(EarsListen(on=False, microphone=""))
 
     def _spawn(self, coro: Any) -> None:
         task = asyncio.ensure_future(coro)
@@ -132,16 +162,17 @@ class EarsHost:
         task.add_done_callback(self._tasks.discard)
 
     def _on_exit(self, code: int | None) -> None:
-        for future in self._saying.values():
-            if not future.done():
-                future.cancel()
+        for say_id, future in self._saying.items():
+            if not future.done():  # the sentence ended, not the conversation: it carries on
+                future.set_result(EarsSaid(say_id=say_id, ok=False, detail="stopped"))
         if self._stopping:
             return
         now = time.monotonic()
         self._restarts = [t for t in self._restarts if now - t < 3600]
         if len(self._restarts) >= MAX_RESTARTS_PER_HOUR:
             self.available, self.detail = False, f"the audio process kept stopping (exit code {code})"
-            log.warning("ears disabled: it kept stopping")
+            log.warning("ears kept stopping; trying again in %d minutes", RETRY_AFTER_S // 60)
+            self._spawn(self._start_later(RETRY_AFTER_S))
             return
         self._restarts.append(now)
         log.warning("ears exited with code %s; restarting", code)

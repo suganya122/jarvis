@@ -137,6 +137,7 @@ def check(data: dict[str, Any], said: str, known: set[str]) -> Checked:
             ref
             and type_ in ENTITY_TYPES
             and 1 < len(name) <= 60
+            and norm(name)
             and norm(name) in heard
             and not looks_sensitive(name)
         ):
@@ -148,7 +149,8 @@ def check(data: dict[str, Any], said: str, known: set[str]) -> Checked:
         subject, predicate = str(raw.get("subject", "")), str(raw.get("predicate", ""))
         obj, quote = str(raw.get("object", "")).strip(), str(raw.get("quote", "")).strip()
         spec = PREDICATES.get(predicate)
-        if spec is None or subject not in refs or not obj or len(quote) < 3 or norm(quote) not in heard:
+        said_it = bool(norm(quote)) and norm(quote) in heard  # nothing left to compare: not proof
+        if spec is None or subject not in refs or not obj or len(quote) < 3 or not said_it:
             continue
         if looks_sensitive(obj, quote):
             continue
@@ -157,6 +159,8 @@ def check(data: dict[str, Any], said: str, known: set[str]) -> Checked:
                 continue
         else:
             content = [w for w in norm(obj).split() if len(w) > 2]
+            if not norm(obj):
+                continue
             longest = MAX_INSTRUCTION_WORDS if predicate == INSTRUCTION else MAX_PHRASE_WORDS
             if (
                 (predicate == INSTRUCTION and subject != SELF_ID)

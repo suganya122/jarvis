@@ -1,13 +1,17 @@
 """Running an ability and installing what it needs, in separate processes that never see secrets."""
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
+import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from core.env_file import CHECKOUT_ROOT, find_env_file
 
 HOST = Path(__file__).with_name("host.py")
 """Run by path: it needs only the standard library, so it works however Jarvis was installed."""
@@ -34,12 +38,33 @@ def clean_env() -> dict[str, str]:
     return env
 
 
+def _quote(path: Path) -> str:
+    return '"' + str(path.resolve()).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def sandboxed(argv: list[str], folder: Path) -> list[str]:
+    """On a Mac, inside macOS's sandbox: Jarvis's own data (the database, notes, other abilities) and
+    its key file can't be read or written, nor the keychain; only the ability's own folder is open
+    there. Everything else (the web, the user's files) works as for any program they run."""
+    if sys.platform != "darwin" or shutil.which("sandbox-exec") is None:
+        return argv
+    data = folder.parent.parent  # <data dir>/abilities/<name>
+    keys = {p for p in (CHECKOUT_ROOT / ".env", find_env_file(data)) if p is not None}
+    rules = [
+        "(version 1)",
+        "(allow default)",
+        f"(deny file-read* file-write* (subpath {_quote(data)}))",
+        *(f"(deny file-read* file-write* (literal {_quote(k)}))" for k in sorted(keys)),
+        f"(allow file-read* file-write* (subpath {_quote(folder)}))",  # later rules win
+        '(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd"))',
+    ]
+    return ["sandbox-exec", "-p", "\n".join(rules), *argv]
+
+
 async def run(folder: Path, args: dict[str, Any], timeout_s: float = RUN_TIMEOUT_S) -> Ran:
+    argv = [sys.executable, "-I", str(HOST), str(folder)]  # -I: nothing from its folder or PYTHON*
     proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-I",  # nothing from the folder it runs in, the user's site-packages or PYTHON* variables
-        str(HOST),
-        str(folder),
+        *sandboxed(argv, folder),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -50,7 +75,8 @@ async def run(folder: Path, args: dict[str, Any], timeout_s: float = RUN_TIMEOUT
     try:
         out, err = await asyncio.wait_for(proc.communicate(json.dumps(args).encode()), timeout_s)
     except TimeoutError:
-        proc.kill()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)  # and anything it started
         await proc.wait()
         return Ran(False, f"it took longer than {timeout_s:.0f} s and was stopped")
     last = out.decode(errors="replace").strip().splitlines()[-1:] or [""]
