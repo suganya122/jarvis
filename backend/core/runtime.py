@@ -13,6 +13,7 @@ from contracts.tools import Tool
 from contracts.voice import TranscriptEvent
 from contracts.worker import BrowserConfig, WorkerConfig
 from contracts.ws import ControlState, DownloadProgress, PluginStatus, ServerMessage, TaskUpdate, VoiceCommand
+from core.abilities import Abilities
 from core.approvals import ApprovalBroker
 from core.automation_store import AutomationStore
 from core.automation_tools import CreateRoutine, CreateWatcher
@@ -85,15 +86,10 @@ class Runtime:
         self.knowledge = Knowledge(
             store.conn, self.memory, self.provider, lambda: self._settings, store.record_cost
         )
-        for memory_tool in (
-            Remember(self.memory),
-            Forget(self.memory),
-            Recall(self.memory),
-            *self.knowledge.tools,
-        ):
-            self.registry.register(memory_tool)
-        for tool in extra_tools:
+        tools: list[Tool] = [Remember(self.memory), Forget(self.memory), Recall(self.memory)]
+        for tool in [*tools, *self.knowledge.tools, *extra_tools]:
             self.registry.register(tool)
+        self.abilities = Abilities(data_dir / "abilities", self.registry, self.provider, store.record_cost)
         self.approvals = ApprovalBroker()
         executor = ToolExecutor(self.registry, self.approvals, store, lambda: self._settings)
         self.context = ContextService(self.registry, lambda: self._settings, store)

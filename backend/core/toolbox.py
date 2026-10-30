@@ -20,6 +20,9 @@ class ToolRegistry:
             raise ValueError(f"duplicate tool name: {tool.info.name}")
         self._tools[tool.info.name] = tool
 
+    def remove(self, name: str) -> None:
+        self._tools.pop(name, None)
+
     def remove_source(self, source: str) -> None:
         self._tools = {n: t for n, t in self._tools.items() if t.info.source != source}
 

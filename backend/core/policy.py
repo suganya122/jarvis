@@ -13,6 +13,8 @@ FOCUS_STEALING_TOOLS = frozenset(
     {"focus_window", "press_keys", "scroll", "open_app", "open_url", "open_path", "insert_text",
      "browser_handover", "browser_finish"}  # these two show the browser window to the user
 )  # fmt: skip
+ALWAYS_ASKS = frozenset({"build_ability"})
+"""Asks every time, whatever the settings (even full automation, even a typed command)."""
 
 
 REACHES_THE_COMPUTER = frozenset(
@@ -60,6 +62,14 @@ def decide(
     if background and not direct and tool in FOCUS_STEALING_TOOLS:
         return Decision(
             action="deny", reason="it would take over your screen, which background tasks never do"
+        )
+    if tool in ALWAYS_ASKS:
+        if background:
+            return Decision(
+                action="deny", reason="new abilities are only built when you ask, at the computer"
+            )
+        return Decision(
+            action="ask", reason="building an ability writes and runs new code, so it always asks"
         )
     if risk.always_requires_approval:
         return Decision(action="ask", reason=f"{risk.value.replace('_', ' ')} actions always need approval")
