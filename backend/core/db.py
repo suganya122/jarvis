@@ -142,6 +142,23 @@ MIGRATIONS: list[str] = [
         created_at REAL NOT NULL
     );
     """,
+    # 8: projects the user builds with another AI (see core/projects)
+    """
+    CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        idea TEXT NOT NULL DEFAULT '',
+        learned TEXT NOT NULL DEFAULT '[]',
+        brief TEXT NOT NULL DEFAULT '',
+        built_with TEXT NOT NULL DEFAULT '',
+        watch_window TEXT NOT NULL DEFAULT '',
+        working_marker TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    );
+    """,
 ]
 
 

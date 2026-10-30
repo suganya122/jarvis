@@ -11,7 +11,7 @@ from contracts.tools import PolicyMode
 # Tools that would take over the user's screen (focus, keyboard, new windows).
 FOCUS_STEALING_TOOLS = frozenset(
     {"focus_window", "press_keys", "paste_text", "scroll", "open_app", "open_url", "open_path", "insert_text",
-     "browser_handover", "browser_finish"}  # these two show the browser window to the user
+     "setup_permission", "browser_handover", "browser_finish"}  # the last two show the browser window
 )  # fmt: skip
 ALWAYS_ASKS = frozenset({"build_ability"})
 """Asks every time, whatever the settings (even full automation, even a typed command)."""

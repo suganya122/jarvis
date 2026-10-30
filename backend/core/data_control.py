@@ -62,6 +62,7 @@ def app_files(data_dir: Path) -> list[Path]:
         data_dir / MODELS_DIR,
         data_dir / PLUGINS_DIR,
         data_dir / "browser",  # the assistant's browser profile (its cookies and logins)
+        data_dir / "abilities",  # abilities it built for itself (their code and packages)
     ]
     return [p for p in candidates if p.exists()]
 

@@ -88,6 +88,10 @@ class MacHands:
     def trusted(self) -> bool:
         return bool((self._call("trusted", prompt=False) or {}).get("trusted"))
 
+    def ask_trust(self) -> None:
+        """macOS's own "allow Jarvis to control this computer" prompt (shown if it isn't allowed)."""
+        self._call("trusted", prompt=True)
+
     def _is_blocked(self, app: str) -> bool:
         return any(b in app.casefold() for b in self._blocked)
 

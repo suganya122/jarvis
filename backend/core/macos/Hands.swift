@@ -19,6 +19,7 @@ final class HandsServer {
     private var known: [AXUIElement: String] = [:]
     private var order: [String] = []
     private var counter = 0
+    private var exposed: Set<pid_t> = []
     private let maxHandles = 5000
     let systemWide = AXUIElementCreateSystemWide()
 
@@ -230,7 +231,21 @@ final class HandsServer {
         ]
     }
 
+    /// Chrome, Edge, Brave and Electron apps (Slack, Discord, Teams, WhatsApp…) build the
+    /// accessibility of their pages only when asked; until then a web page is one empty box.
+    /// Asked once per app; apps that don't know the attribute ignore it.
+    private func exposeContent(of window: AXUIElement) {
+        let owner = pid(window)
+        guard owner > 0, !exposed.contains(owner) else { return }
+        exposed.insert(owner)
+        let app = AXUIElementCreateApplication(owner)
+        if AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success {
+            Thread.sleep(forTimeInterval: 0.4)  // the page's tree is built on the app's side
+        }
+    }
+
     private func elements(of window: AXUIElement, query: String, limit: Int) throws -> [[String: Any]] {
+        exposeContent(of: window)
         let wanted = query.lowercased()
         var queue: [(AXUIElement, Int)] = [(window, 0)]
         var next = 0

@@ -34,6 +34,7 @@ from core.overlay import OverlayController
 from core.overlay_host import OverlayHost
 from core.overlay_tasks import TaskChips
 from core.plugin_manager import PluginManager
+from core.projects import Projects
 from core.providers import build_provider
 from core.redact import Redactor
 from core.schedule import local_now
@@ -90,6 +91,7 @@ class Runtime:
         for tool in [*tools, *self.knowledge.tools, *extra_tools]:
             self.registry.register(tool)
         self.abilities = Abilities(data_dir / "abilities", self.registry, self.provider, store.record_cost)
+        self.projects = Projects(store.conn, self.registry, lambda: self.notifier, self._announce)
         self.approvals = ApprovalBroker()
         executor = ToolExecutor(self.registry, self.approvals, store, lambda: self._settings)
         self.context = ContextService(self.registry, lambda: self._settings, store)
@@ -103,7 +105,7 @@ class Runtime:
             self.registry,
             executor,
             skills=self.skill_runner,
-            context=self.knowledge.context,
+            context=self.projects.around(self.knowledge.context),
             on_turn=self.knowledge.learn,
             active=self._active_context,
         )
@@ -316,11 +318,13 @@ class Runtime:
     async def start_automation(self) -> None:
         await self.background.recover()
         await self.automations.start()
+        self.projects.start()
 
     async def shutdown(self) -> None:
         if self.voice_loop is not None:
             await self.voice_loop.stop()
         await self.automations.stop()
+        await self.projects.stop()
         await self.plugins.shutdown()
         if self.overlay_host is not None:
             await self.overlay_host.stop()

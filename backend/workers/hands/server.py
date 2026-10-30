@@ -11,7 +11,7 @@ from workers.hands.fake import FakeError
 from workers.hands.keys import KeyError_
 from workers.hands.locate import LocateError
 from workers.hands.screen_tools import CaptureScreen, HighlightArea
-from workers.hands.setup_tool import AccessibilityStatus
+from workers.hands.setup_tool import AccessibilityStatus, SetupPermission
 from workers.hands.tools import (
     ChooseMenu,
     ClickElement,
@@ -45,6 +45,7 @@ def all_tools() -> dict[str, WorkerTool[Any, Any]]:
         InsertText(),
         PasteText(),
         AccessibilityStatus(),
+        SetupPermission(),
         CaptureScreen(),
         HighlightArea(),
         ActiveContextTool(),

@@ -238,8 +238,15 @@ PLIST
   codesign --force --sign - "$APP" >/dev/null 2>&1 || warn "Couldn't sign $NAME.app; macOS may ask more often."
   "$APP/Contents/MacOS/$NAME" --version >/dev/null || die "$NAME.app was built but doesn't run."
   printf '%s' "$STAMP" > "$STAMP_FILE"
-  warn "$NAME.app was rebuilt, so macOS sees a new app: allow it again. Accessibility: in System Settings →"
-  warn "Privacy & Security → Accessibility, remove Jarvis with - and add it again with +, then reopen Jarvis."
+  # The old build's Accessibility entry would stay switched on but no longer apply (macOS matches
+  # the exact build). Clearing it makes macOS ask afresh when Jarvis starts.
+  if tccutil reset Accessibility local.assistant.jarvis >/dev/null 2>&1; then
+    warn "$NAME.app was rebuilt, so macOS will ask once to let it control this Mac: click Open System"
+    warn "Settings and switch $NAME on (macOS asks for your password or Touch ID; only you can do that step)."
+  else
+    warn "$NAME.app was rebuilt, so macOS sees a new app: allow it again. Accessibility: in System Settings →"
+    warn "Privacy & Security → Accessibility, remove Jarvis with - and add it again with +, then reopen Jarvis."
+  fi
   fi
   LAUNCH="$APP/Contents/MacOS/$NAME"
 fi

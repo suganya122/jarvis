@@ -1,16 +1,31 @@
-"""Setup diagnostics for window control, screenshots and highlights (read-only)."""
+"""Setup for window control, screenshots and highlights: what works, and turning permissions on."""
 
 import asyncio
 import os
 import shutil
 import subprocess
 import sys
+from typing import Literal
+
+from pydantic import Field
 
 from contracts.common import RiskLevel
 from contracts.tools import ToolAssessment, ToolResult
+from workers.common.base import Args
 from workers.hands import capture, uinput
 from workers.hands.overlay import unavailable_reason
 from workers.hands.tools import HandsEnv, NoArgs, WorkerTool
+
+MAC_BUNDLE_ID = "local.assistant.jarvis"
+"""Jarvis.app's identity to macOS (install.sh writes it into Info.plist)."""
+PANES = {
+    "accessibility": "Privacy_Accessibility",
+    "screen_recording": "Privacy_ScreenCapture",
+    "microphone": "Privacy_Microphone",
+    "speech_recognition": "Privacy_SpeechRecognition",
+    "automation": "Privacy_Automation",
+}
+Permission = Literal["accessibility", "screen_recording", "microphone", "speech_recognition", "automation"]
 
 
 def _gsetting_accessibility() -> bool | None:
@@ -98,3 +113,79 @@ def _mac_status(env: HandsEnv) -> ToolResult:
     windows = env.hands.list_windows()
     output = f"Window and app control: working ({len(windows)} windows visible); keys, clicks, menus too."
     return ToolResult(ok=True, output=output, evidence={"accessibility": True, "windows": len(windows)})
+
+
+class PermissionArgs(Args):
+    permission: Permission = Field(default="accessibility", description="Which permission to set up.")
+
+
+def _run(argv: list[str]) -> bool:
+    try:
+        return subprocess.run(argv, capture_output=True, timeout=10, check=False).returncode == 0  # noqa: S603
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+class SetupPermission(WorkerTool[PermissionArgs]):
+    name = "setup_permission"
+    description = (
+        "When the user asks you to turn on a permission yourself (Accessibility, Screen Recording, "
+        "microphone, speech recognition, Automation): do every step the system allows. On a Mac that "
+        "clears a stale entry, shows macOS's own prompt and opens the exact settings page; the final "
+        "switch (with their password or Touch ID) is the one step macOS keeps for the user."
+    )
+    args_model = PermissionArgs
+    risk = RiskLevel.WRITE
+    capabilities = ()
+
+    def assess(self, args: PermissionArgs, env: HandsEnv) -> ToolAssessment:
+        return ToolAssessment(
+            risk=self.risk, summary=f"Set up the {args.permission.replace('_', ' ')} permission"
+        )
+
+    async def run(self, args: PermissionArgs, env: HandsEnv) -> ToolResult:
+        if sys.platform == "darwin":
+            return await asyncio.to_thread(_mac_setup, env, args.permission)
+        if sys.platform.startswith("linux") and args.permission == "accessibility":
+            done = await asyncio.to_thread(
+                _run, ["gsettings", "set", "org.gnome.desktop.interface", "toolkit-accessibility", "true"]
+            )
+            if done:
+                return ToolResult(
+                    ok=True, output="Turned on desktop accessibility. Apps opened from now on can be read."
+                )
+            return ToolResult(ok=True, output="Accessibility needs nothing to be turned on on this desktop.")
+        return ToolResult(ok=True, output="Nothing needs turning on for that on this computer.")
+
+
+def _mac_setup(env: HandsEnv, permission: str) -> ToolResult:
+    """Everything macOS lets an app do about its own permission, short of switching it on."""
+    done: list[str] = []
+    if permission == "accessibility":
+        trusted = bool(getattr(env.hands, "trusted", lambda: False)())
+        if trusted:
+            return ToolResult(
+                ok=True, output="Accessibility is already on for Jarvis: windows, clicks and keys work."
+            )
+        if _run(["tccutil", "reset", "Accessibility", MAC_BUNDLE_ID]):
+            done.append(
+                "cleared the old Accessibility entry (it stays on but stops applying after an update)"
+            )
+        ask = getattr(env.hands, "ask_trust", None)
+        if ask is not None:
+            ask()
+            done.append("asked macOS to show its prompt")
+    url = f"x-apple.systempreferences:com.apple.preference.security?{PANES[permission]}"
+    if _run(["open", url]):
+        done.append("opened that page in System Settings")
+    what = permission.replace("_", " ").title()
+    steps = "; ".join(done) or "couldn't open System Settings"
+    return ToolResult(
+        ok=bool(done),
+        output=(
+            f"{what}: I {steps}. The last step is yours: switch Jarvis on there (macOS asks for your "
+            "password or Touch ID, and doesn't let any app do that for itself). If Jarvis isn't in the "
+            "list, add it with + (Applications in your home folder → Jarvis)."
+        ),
+        evidence={"steps": done},
+    )
