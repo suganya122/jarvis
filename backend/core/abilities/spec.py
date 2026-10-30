@@ -19,6 +19,7 @@ DECLARABLE = frozenset(
      Capability.INPUT_CONTROL, Capability.SEND_EXTERNAL, Capability.PURCHASE}
 )  # fmt: skip
 """What an ability may say it does, on top of running code (shell.run), which every ability does."""
+HOOKS = ("", "hears")
 ORDER = (RiskLevel.WRITE, RiskLevel.EXTERNAL_SEND, RiskLevel.DESTRUCTIVE, RiskLevel.PURCHASE)
 """Running new code is never just reading: an ability is at least WRITE, whatever it declares."""
 
@@ -35,6 +36,8 @@ class AbilitySpec:
     code: str
     test_args: dict[str, Any]
     created_at: float = 0.0
+    hook: str = ""
+    """"hears": it is also asked about every request Jarvis hears, before Jarvis acts on it."""
 
     def manifest(self) -> dict[str, Any]:
         return {
@@ -47,6 +50,7 @@ class AbilitySpec:
             "packages": list(self.packages),
             "test_args": self.test_args,
             "created_at": self.created_at,
+            "hook": self.hook,
         }
 
 
@@ -78,6 +82,9 @@ def check(manifest: dict[str, Any], code: str, goal: str) -> AbilitySpec | str:
     test_args = manifest.get("test_args")
     if not isinstance(test_args, dict):
         return "test_args must be an object: arguments for a harmless test run"
+    hook = str(manifest.get("hook") or "")
+    if hook not in HOOKS:
+        return 'hook must be "" or "hears"'
     if not code.strip() or len(code) > MAX_CODE_CHARS:
         return f"main.py must be 1-{MAX_CODE_CHARS} characters"
     try:
@@ -97,6 +104,7 @@ def check(manifest: dict[str, Any], code: str, goal: str) -> AbilitySpec | str:
         code=code,
         test_args=test_args,
         created_at=float(manifest.get("created_at") or 0.0),
+        hook=hook,
     )
 
 

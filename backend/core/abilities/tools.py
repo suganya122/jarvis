@@ -73,7 +73,9 @@ class BuildAbility:
         description=(
             "When no tool can do what the user asked, build a new ability for yourself: the most "
             "capable model writes a small program for it, which is installed and tested on this "
-            "computer and then becomes a tool you can use from now on. The user is always asked first."
+            "computer and then becomes a tool you can use from now on. It can also change how you "
+            "hear: an ability that listens is asked about every request before you act on it (e.g. "
+            "only the user's own voice). The user is always asked first."
         ),
         input_schema=BuildArgs.model_json_schema(),
         risk=RiskLevel.WRITE,

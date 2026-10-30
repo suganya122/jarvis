@@ -655,3 +655,26 @@ def test_words_before_a_pause_are_kept_when_the_recogniser_starts_its_text_over(
             assert rig.turns[0][0] == "send a message to srinith and tell him i will be late"
 
     asyncio.run(run())
+
+
+def test_an_ability_that_listens_can_stop_a_request_being_acted_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        heard: list[str] = []
+
+        async def only_me(audio: bytes, text: str) -> bool:
+            heard.append(text)
+            return "news" not in text
+
+        rig.hf._d.check_voice = only_me
+        rig.rec.last_audio = lambda: b"\x00\x00" * 160  # type: ignore[attr-defined]
+        async with rig.running():
+            await rig.speak("jarvis the news at nine")  # the TV, say: not acted on
+            await rig.until(lambda: heard == ["the news at nine"])
+            await asyncio.sleep(0.3)
+            assert rig.turns == []
+            await rig.speak("jarvis what time is it")
+            await rig.until(lambda: rig.ears.said == ["It is noon."])
+            assert [t for t, _ in rig.turns] == ["what time is it"]
+
+    asyncio.run(run())

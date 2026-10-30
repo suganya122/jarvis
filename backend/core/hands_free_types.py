@@ -102,6 +102,9 @@ class HandsFreeDeps:
     speculate: Callable[[str, str | None], Coroutine[Any, Any, object | None]] | None = None
     """Start the model on what was said so far, during a pause (its tools wait for the final words)."""
     discard: Callable[[object], Awaitable[None]] | None = None
+    check_voice: Callable[[bytes, str], Awaitable[bool]] | None = None
+    """(the request's audio, its words) -> act on it? Abilities that listen (core.abilities): e.g.
+    only the user's own voice. Without one, everything addressed to it is acted on."""
     clock: Callable[[], float] = time.monotonic
 
 

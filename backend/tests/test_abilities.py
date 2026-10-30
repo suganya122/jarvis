@@ -221,3 +221,53 @@ def test_an_ability_that_sends_or_pays_is_not_run_before_the_user_sees_it(tmp_pa
         assert result.ok and "not test-run" in result.output
 
     asyncio.run(go())
+
+
+LISTENS = (
+    "import json, wave\n"
+    "def run(args: dict) -> str:\n"
+    "    if args.get('hook') != 'hears':\n"
+    "        return 'ready'\n"
+    "    with wave.open(args['wav']) as w:\n"
+    "        assert w.getframerate() == 16000 and w.getnchannels() == 1\n"
+    "    return 'ignore: the TV' if 'tv' in args['text'] else 'keep'\n"
+)
+
+
+def test_an_ability_that_listens_decides_what_jarvis_acts_on(tmp_path: Path) -> None:
+    provider = FakeProvider(reply=reply({**MANIFEST, "name": "only_me", "hook": "hears"}, LISTENS))
+
+    async def go() -> None:
+        registry = ToolRegistry()
+        abilities = Abilities(tmp_path, registry, lambda: provider, no_cost)
+        built_it = await registry.get("build_ability").run({"goal": "only listen to my voice"}, CTX)  # type: ignore[union-attr]
+        assert built_it.ok
+        audio = b"\x01\x00" * 1600  # 0.1 s
+        assert await abilities.check_voice(audio, "what time is it") is True
+        assert await abilities.check_voice(audio, "breaking news on tv") is False
+        for _ in range(25):
+            await abilities.check_voice(audio, "again")
+
+    asyncio.run(go())
+    kept = list((tmp_path / "only_me" / "heard").glob("*.wav"))
+    assert len(kept) == 20  # only the last few recordings are kept
+
+
+def test_a_broken_listening_ability_never_makes_jarvis_deaf(tmp_path: Path) -> None:
+    code = (
+        "def run(args: dict) -> str:\n    if args.get('hook'):\n        raise RuntimeError('boom')\n"
+        "    return 'ok'\n"
+    )
+    provider = FakeProvider(reply=reply({**MANIFEST, "name": "flaky", "hook": "hears"}, code))
+
+    async def go() -> None:
+        registry = ToolRegistry()
+        abilities = Abilities(tmp_path, registry, lambda: provider, no_cost)
+        await registry.get("build_ability").run({"goal": "check voices"}, CTX)  # type: ignore[union-attr]
+        assert await abilities.check_voice(b"\x00\x00" * 100, "hello") is True
+
+    asyncio.run(go())
+
+
+def test_only_known_hooks_are_accepted() -> None:
+    assert check({**MANIFEST, "hook": "everything"}, GOOD, "x") == 'hook must be "" or "hears"'

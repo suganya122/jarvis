@@ -268,8 +268,7 @@ class Runtime:
             self.voice.on_transcript(event)
 
     async def start_voice_loop(self, extra_env: dict[str, str] | None = None) -> None:
-        """Always listening for the wake word (microphone and speaker in their own process)."""
-        self.voice_loop = VoiceLoop(
+        self.voice_loop = VoiceLoop(  # always listening for the wake word (its mic in its own process)
             data_dir=self._data_dir,
             store=self.store,
             chat=self.chat,
@@ -282,6 +281,7 @@ class Runtime:
             begin_context=self.context.begin,
             for_voice=self.context.for_voice,
             extra_env=extra_env,
+            check_voice=self.abilities.check_voice,  # abilities that listen (e.g. only the user's voice)
         )
         await self.voice_loop.start()
 

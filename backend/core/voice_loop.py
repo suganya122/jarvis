@@ -2,6 +2,7 @@
 the overlay, and the chat. Nothing here decides anything; see core/hands_free.py."""
 
 import asyncio
+import base64
 import logging
 import os
 import sys
@@ -46,11 +47,17 @@ def apple_speech_helper(engine: str) -> str:
     return "" if engine == "vosk" else mac_app()
 
 
+MAX_KEPT_FRAMES = 600
+"""60 s of 100 ms blocks: the longest request kept for abilities that listen."""
+
+
 class _Recognizer:
     """The voice worker's streaming speech-to-text, for the hands-free loop's own streams."""
 
     def __init__(self, worker: Callable[[], WorkerHost | None]) -> None:
         self._worker = worker
+        self._audio: dict[str, list[str]] = {}
+        self._last = b""
 
     def _host(self) -> WorkerHost:
         host = self._worker()
@@ -59,13 +66,24 @@ class _Recognizer:
         return host
 
     async def open(self, stream_id: str) -> None:
+        self._audio[stream_id] = []
         await self._host().audio_open(stream_id, SAMPLE_RATE)
 
     async def feed(self, stream_id: str, pcm_b64: str) -> None:
+        frames = self._audio.get(stream_id)
+        if frames is not None and len(frames) < MAX_KEPT_FRAMES:
+            frames.append(pcm_b64)
         await self._host().audio_chunk(stream_id, pcm_b64)
 
     async def close(self, stream_id: str, abort: bool = False) -> None:
+        frames = self._audio.pop(stream_id, None)
+        if frames and not abort and not stream_id.startswith("hf-cut-"):
+            self._last = b"".join(base64.b64decode(f) for f in frames)
         await self._host().audio_close(stream_id, abort=abort)
+
+    def last_audio(self) -> bytes:
+        """The last request as heard (16 kHz, 16-bit mono PCM), for abilities that listen."""
+        return self._last
 
 
 class VoiceLoop:
@@ -84,6 +102,7 @@ class VoiceLoop:
         begin_context: Callable[[], None],
         for_voice: Callable[[str], Awaitable[tuple[ActiveContext | None, str]]],
         extra_env: dict[str, str] | None = None,
+        check_voice: Callable[[bytes, str], Awaitable[bool]] | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._store = store
@@ -116,6 +135,7 @@ class VoiceLoop:
                 on_wake=self._on_wake,
                 speculate=self._speculate,
                 discard=self._discard,
+                check_voice=check_voice,
             )
         )
 

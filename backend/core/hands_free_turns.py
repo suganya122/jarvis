@@ -162,6 +162,8 @@ class TurnsMixin:
             paused=lambda: self.state == "approval",
             on_cut_in=self.interrupt,
         )
+        if not await self._for_us(text):
+            return None
         self._barge, self._saying = barge, ""
         if self._carry:  # they went on talking before it answered: one request, not two halves
             text, self._carry = f"{self._carry} {text}", ""
@@ -178,6 +180,17 @@ class TurnsMixin:
                 self._carry = text
             return None
         return reply
+
+    async def _for_us(self, text: str) -> bool:
+        """Abilities that listen get the say: e.g. one that only lets the user's own voice through."""
+        audio = getattr(self._d.recognizer, "last_audio", lambda: b"")()
+        if self._d.check_voice is None or not audio:
+            return True
+        try:
+            return await self._d.check_voice(audio, text)
+        except Exception:  # a broken ability must never make it deaf
+            log.warning("an ability that listens failed; acting on the request", exc_info=True)
+            return True
 
     def _remember_said(self, spoken: str) -> None:
         """What it just said, for a few seconds: the microphone may still be hearing it."""
