@@ -160,7 +160,8 @@ async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(conn: An
     assert send.session_id == "project-session"
     assert "round 1:" in send.text and "not a new request" in send.text and "0 errors and 0 bugs" in send.text
     assert "fix every bug" in send.text and "professional, modern, attractive" in send.text
-    assert "check it yourself; never take its report alone" in send.text and "they can try it now" in send.text
+    assert "check it yourself; never take its report alone" in send.text
+    assert "they can try it now" in send.text
     assert send.force_model and rig.host.tracked  # the kill switch can stop it
     assert rig.told[-1] == ("Bakery website", rig.host.reply)  # what it did, said to the user
     status = await rig.registry.get("project_status").run({"name": "Bakery"}, CTX)  # type: ignore[union-attr]
