@@ -14,7 +14,7 @@ from contracts.ws import ChatDelta, ChatSend
 from core import db
 from core.projects import Projects
 from core.projects.review import MAX_ROUNDS
-from core.projects.watch import NEVER_SEEN_AFTER, find_window
+from core.projects.watch import MISSING_AFTER, NEVER_SEEN_AFTER, find_window
 from core.toolbox import ToolRegistry
 from workers.hands import setup_tool
 
@@ -165,7 +165,7 @@ async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(
     assert send.session_id == "project-session"
     assert "round 1:" in send.text and "not a new request" in send.text and "0 errors and 0 bugs" in send.text
     assert "fix every bug" in send.text and "professional, modern, attractive" in send.text
-    assert "check it yourself; never take its report alone" in send.text
+    assert "check it yourself, the way that kind of work is checked; never take its word for it" in send.text
     assert "they can try it now" in send.text
     assert send.force_model and rig.host.tracked  # the kill switch can stop it
     assert rig.told[-1] == ("Bakery website", rig.host.reply)  # what it did, said to the user
@@ -203,8 +203,10 @@ async def test_a_window_that_closes_or_never_shows_work_is_reported_not_watched_
     await rig.save(
         name="Study plan", status="sent", built_with="ChatGPT", watch_window="ChatGPT", working_marker="Stop"
     )
-    for _ in range(3):
+    for _ in range(MISSING_AFTER - 1):  # a switched tab: it keeps looking
         await rig.projects.watcher.poll()
+    assert rig.told == []
+    await rig.projects.watcher.poll()
     assert rig.told == [("Study plan", "I can't see the ChatGPT window any more.")]
 
     quick = Rig(conn, ["w5  Google Chrome — ChatGPT"], ["No matching controls."])

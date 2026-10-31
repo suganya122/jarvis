@@ -27,7 +27,8 @@ DONE_AFTER = 2
 """Polls in a row without the working sign, after it was seen, before it counts as answered."""
 NEVER_SEEN_AFTER = 6
 """Polls without ever seeing it work: it most likely answered before the first look."""
-MISSING_AFTER = 3
+MISSING_AFTER = 30
+"""Polls without its window (10 minutes): the user may have switched tabs while it works."""
 GIVE_UP_S = 3 * 3600.0
 
 Tell = Callable[[str, str], Awaitable[None]]

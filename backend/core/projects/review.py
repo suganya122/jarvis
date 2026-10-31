@@ -68,26 +68,33 @@ def follow_up(project: Project, round_: int) -> str:
         "user, and tell them it's finished and fully checked so they can try it now, with what was built "
         "and what was fixed, in two or three sentences."
     )
+    folder = claude_code.folder_for(project.name).as_posix().replace(str(Path.home()), "~", 1)
     return f"""(Automatic check, round {round_}: {who} has stopped working on the project "{project.name}".
 This is the follow-through the user asked for when they started it, not a new request from them.)
 Get it to 0 errors and 0 bugs:
-1. Read {who}'s window (focus it, find_elements, read_element), and for Claude Code also the project
-   folder's files: did it finish, stop on an error, or ask something?
+1. Read {who}'s latest answer in its window (focus it, find_elements, read_element: a long window
+   shows its newest end): did it finish, stop on an error, or ask something?
 2. If it asked something, answer from the project if you can. If only the user can answer, ask them in one
    short sentence and stop there; the project waits for them.
-3. Every round, check it yourself; never take its report alone: open what was built (its preview in that
-   window, the page, its local address or the app), look at it (capture_screen), try its main features with
-   the window tools, and read the code for obvious mistakes. Note every error, bug, broken or missing
-   feature, and anything that looks unprofessional. If you truly can't see it, ask it for a link or a file
-   you can open, and check that before calling anything done.
+3. Every round, check it yourself, the way that kind of work is checked; never take its word for it:
+   - Code, a page or an app: put its files in {folder} (write_text_file, or run_shell), then run its
+     tests and its build there, open it (open_path, or a server started in the background with
+     `nohup <command> > server.log 2>&1 &` and open_url) and try its main features with the window
+     tools, with capture_screen to see it. Or try it in its own preview in that window (Claude's
+     artifact, ChatGPT's canvas). Read the code for mistakes too.
+   - Writing (a document, a plan, a message, an answer): go through the brief point by point: every part
+     asked for is there and right, in the tone and length wanted; facts, numbers and links check out.
+   - Anything else: check it against what the user asked, the way a careful expert would.
+   Note every error, bug, broken or missing part, and anything that looks unprofessional.
 4. If anything is wrong, unfinished, or it reported errors, send it a precise request that lists exactly
-   what to fix. Once it's built, the first time, send a full review brief written like a senior QA
-   engineer and product designer: run every test and the build (Claude Code: run them in the project and
-   add tests where there are none), test every feature on phone and desktop widths, console errors,
-   broken links, edge cases, accessibility and security; fix every bug; raise the design to a
-   professional, modern, attractive standard that suits "{project.name}" (a coherent palette, typography
-   and spacing, polished components and images, clear hierarchy, hover and focus states, subtle
-   motion); and report what it checked, what failed, what it fixed, and what's left.
+   what to fix, in its message box (click it, paste_text, Enter). Once it's built, the first time, send a
+   full review brief written like a senior QA engineer and product designer: run every test and the
+   build (Claude Code: run them in the project and add tests where there are none), test every feature
+   on phone and desktop widths, console errors, broken links, edge cases, accessibility and security;
+   fix every bug; raise the design to a professional, modern, attractive standard that suits "{project.name}"
+   (a coherent palette, typography and spacing, polished components and images, clear hierarchy, hover
+   and focus states, subtle motion); and report what it checked, what failed, what it fixed, and what's
+   left.
 5. {ending}
 Whenever you send it something, save the project as sent again (same window and working sign) so it is
 watched. Say in one sentence what you're doing."""
