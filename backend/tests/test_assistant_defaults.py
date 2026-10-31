@@ -133,10 +133,12 @@ def test_settings_saved_with_the_0_1_10_defaults_are_upgraded_too() -> None:
 def test_saved_limits_that_stopped_payments_halfway_are_raised_once() -> None:
     """Paying on a real site stopped with "this is taking more work than I do in one go": every
     step sends the page again, and that cached part counted in full."""
-    old = Settings.model_validate(
-        upgrade_saved({"defaults_version": 3, "agent": {"max_steps": 15, "max_turn_tokens": 200_000}})
-    )
-    assert (old.agent.max_steps, old.agent.max_turn_tokens) == (40, 400_000)
+    for steps, tokens, version in ((15, 200_000, 3), (40, 400_000, 4)):  # 0.1.32's too
+        saved = {"agent": {"max_steps": steps, "max_turn_tokens": tokens}, "defaults_version": version,
+                 "background": {"max_steps": 25, "token_budget": 100_000}}  # fmt: skip
+        old = Settings.model_validate(upgrade_saved(saved))
+        assert (old.agent.max_steps, old.agent.max_turn_tokens) == (150, 1_500_000)
+        assert (old.background.max_steps, old.background.token_budget) == (80, 500_000)
     chosen = Settings.model_validate(upgrade_saved({"defaults_version": 3, "agent": {"max_steps": 8}}))
     assert chosen.agent.max_steps == 8  # a limit the user set is kept
     from contracts.model import Usage

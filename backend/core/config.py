@@ -162,9 +162,10 @@ class RouterSettings(BaseModel):
 
 
 class AgentSettings(BaseModel):
-    max_steps: int = Field(default=40, ge=1, le=60)
-    """Model calls per turn; each tool round is one step. Paying on a real site takes 20 or more."""
-    max_turn_tokens: int = Field(default=400_000, ge=1_000)
+    max_steps: int = Field(default=150, ge=1, le=300)
+    """Model calls per turn; each tool round is one step. A backstop only: a task the user asked for
+    runs to the end (repeats are caught as loops, and old steps are shortened as it goes)."""
+    max_turn_tokens: int = Field(default=1_500_000, ge=1_000)
     """Stop the turn once its work passes this many tokens (Turn.work_tokens: what is read again
     from the cache counts a tenth, as it costs)."""
     max_identical_calls: int = Field(default=2, ge=1, le=10)
@@ -228,9 +229,9 @@ class VoiceSettings(BaseModel):
 
 class BackgroundSettings(BaseModel):
     max_concurrent: int = Field(default=2, ge=1, le=5)
-    token_budget: int = Field(default=100_000, ge=5_000)
-    """Per background task (and per routine run): input + output tokens across all steps."""
-    max_steps: int = Field(default=25, ge=1, le=100)
+    token_budget: int = Field(default=500_000, ge=5_000)
+    """Per background task (and per routine run): its work across all steps (Turn.work_tokens)."""
+    max_steps: int = Field(default=80, ge=1, le=200)
     desktop_notifications: bool = True
     """Also show notifications through the desktop (notify-send), even with the browser closed."""
 
@@ -300,10 +301,11 @@ class PluginSettings(BaseModel):
     messages_per_minute: int = Field(default=10, ge=1, le=120)
 
 
-DEFAULTS_VERSION = 4
+DEFAULTS_VERSION = 5
 """Bumped when a default changes in a way saved settings should pick up once (see upgrade_saved)."""
-OLD_MAX_STEPS, OLD_MAX_TURN_TOKENS = 15, 200_000
-"""Until 0.1.32: too little for paying on a real site, which then stopped halfway."""
+OLD_MAX_STEPS, OLD_MAX_TURN_TOKENS = (15, 40), (200_000, 400_000)
+OLD_BACKGROUND = (25, 100_000)
+"""Until 0.1.33: too little for long tasks (paying on a real site), which then stopped halfway."""
 
 
 def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
@@ -325,12 +327,20 @@ def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
         if _was_old_default(saved):
             data["tools"] = {**tools, "policies": {c.value: m for c, m in default_policies().items()}}
     agent = data.get("agent")
-    if data.get("defaults_version", 0) < 4 and isinstance(agent, dict):  # payments stopped halfway
-        if agent.get("max_steps") == OLD_MAX_STEPS:
+    if data.get("defaults_version", 0) < 5 and isinstance(agent, dict):  # long tasks stopped halfway
+        if agent.get("max_steps") in OLD_MAX_STEPS:
             agent = {**agent, "max_steps": AgentSettings().max_steps}
-        if agent.get("max_turn_tokens") == OLD_MAX_TURN_TOKENS:
+        if agent.get("max_turn_tokens") in OLD_MAX_TURN_TOKENS:
             agent = {**agent, "max_turn_tokens": AgentSettings().max_turn_tokens}
         data["agent"] = agent
+    bg = data.get("background")
+    if data.get("defaults_version", 0) < 5 and isinstance(bg, dict):
+        defaults = BackgroundSettings()
+        if bg.get("max_steps") == OLD_BACKGROUND[0]:
+            bg = {**bg, "max_steps": defaults.max_steps}
+        if bg.get("token_budget") == OLD_BACKGROUND[1]:
+            bg = {**bg, "token_budget": defaults.token_budget}
+        data["background"] = bg
     return {**data, "defaults_version": DEFAULTS_VERSION}
 
 

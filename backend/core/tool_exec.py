@@ -16,6 +16,7 @@ from contracts.ws import ApprovalRequested, ApprovalResolved, ToolFinished, Tool
 from core.approvals import ApprovalBroker
 from core.chat_types import Emit
 from core.config import Settings
+from core.open_check import OPENS_PAGES, check_opened
 from core.policy import decide
 from core.store import Store
 from core.toolbox import INTERNAL_TOOLS, ToolRegistry
@@ -253,6 +254,8 @@ class ToolExecutor:
             raise
         except Exception as exc:
             result = ToolResult(ok=False, output=f"Tool failed: {type(exc).__name__}")
+        if call.name in OPENS_PAGES:  # "opened" only means asked: see what actually loaded
+            result = await check_opened(result, self._registry.get, ctx)
         if result.trust is Trust.UNTRUSTED and not perms.tainted:
             perms.tainted = True
             await self._store.mark_tainted(perms.session_id)

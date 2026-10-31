@@ -32,6 +32,7 @@ from contracts.ws import ChatCancelled, ChatDelta, ChatError, ChatSend, ChatStar
 from core.chat_routes import RoutesMixin
 from core.chat_types import Emit
 from core.config import Settings
+from core.context_trim import shorten_old_steps
 from core.prompts import SYSTEM_PROMPT
 from core.router import plan
 from core.router.rules import clean
@@ -46,6 +47,12 @@ from core.toolbox import ToolRegistry
 from core.turn import Step, Turn
 
 log = logging.getLogger(__name__)
+SAME_AGAIN = (
+    "Not run: this exact step already gave the same result twice. Don't repeat it: try another way "
+    "(read the window again, another control, a search, a different page or app)."
+)
+MAX_STRIKES = 3
+"""Repeats it is told about before the turn stops as a loop: it gets to try other ways first."""
 
 
 class ChatService(RoutesMixin):
@@ -226,7 +233,9 @@ class ChatService(RoutesMixin):
         if turn.background:  # a background task has its own, larger but hard budget
             bg = settings.background
             limits = limits.model_copy(update={"max_steps": bg.max_steps, "max_turn_tokens": bg.token_budget})
+        strikes = 0
         for step_number in range(1, limits.max_steps + 1):
+            messages = shorten_old_steps(messages)
             request = ModelRequest(
                 trace_id=turn.trace_id,
                 system=SYSTEM_PROMPT,
@@ -262,13 +271,15 @@ class ChatService(RoutesMixin):
                 await self._flush(turn, "Not run: the reply ended before the call was complete.")
                 await self._done(send, emit, turn, done.stop_reason)
                 return
-            looping = False
             for call in calls:
                 key = (call.name, json.dumps(call.input, sort_keys=True, default=str))
                 last = seen[key][-limits.max_identical_calls :]
                 if len(last) == limits.max_identical_calls and len(set(last)) == 1:
-                    looping = True  # reading a page again after it changed is not
-                    break
+                    strikes += 1  # reading a page again after it changed is not a repeat
+                    turn.pending.results[call.call_id] = ToolResultBlock(
+                        call_id=call.call_id, output=SAME_AGAIN, is_error=True
+                    )
+                    continue
                 outcome = await self._executor.execute(
                     call,
                     request_id=send.request_id,
@@ -289,11 +300,8 @@ class ChatService(RoutesMixin):
                         evidence=outcome.evidence,
                     )
                 )
-            filler = (
-                "Not run: the same call kept repeating, so the turn was stopped." if looping else "Not run."
-            )
-            messages.extend(await self._flush(turn, filler))
-            if looping:
+            messages.extend(await self._flush(turn, "Not run."))
+            if strikes >= MAX_STRIKES:  # told to try another way, and it kept repeating
                 await self._stopped(send, emit, turn, "loop_detected")
                 return
             tier = self._maybe_escalate(turn, tier, step_number, settings)

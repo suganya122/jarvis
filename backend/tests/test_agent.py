@@ -403,3 +403,16 @@ def test_app_data_folder_is_always_protected(make: Make, tmp_path: Path) -> None
     harness, _, _ = make([], settings)
     config = harness.client.app.state.runtime.worker_config()  # type: ignore[attr-defined]
     assert str(tmp_path.resolve()) in config.denied_paths
+
+
+def test_a_repeat_is_told_to_try_another_way_and_the_task_goes_on(make: Make) -> None:
+    """Stopping at the first repeat left tasks halfway; now it hears why and tries something else."""
+    script = [*(FakeStep(tool_calls=[("peek", {})]) for _ in range(3))]
+    script += [FakeStep(tool_calls=[("current_time", {})]), FakeStep(text="Done another way.")]
+    harness, _, provider = make(script)
+    with harness.ws() as ws:
+        handshake(ws)
+        events = turn(ws, "do it")
+    assert of(events, "chat.done")[0]["stop_reason"] == "end_turn"
+    told = [r.output for m in provider.requests[-1].messages for r in m.tool_results]
+    assert any("try another way" in t for t in told)

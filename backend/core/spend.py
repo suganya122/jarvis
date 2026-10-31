@@ -1,7 +1,9 @@
-"""Spend caps: once today's or this month's estimated Claude cost reaches its cap, every
-model call is refused (chat, background tasks, routines, speculation, dictation clean-up).
-Instant commands, skills, reminders and watchers need no model and keep working."""
+"""Spend caps: once today's or this month's estimated Claude cost reaches its cap, every new
+model request is refused (chat, background tasks, routines, speculation, dictation clean-up);
+one already under way is finished, so nothing stops halfway. Instant commands, skills,
+reminders and watchers need no model and keep working."""
 
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Literal
@@ -9,6 +11,8 @@ from typing import Literal
 from contracts.model import ModelError, ModelEvent, ModelProvider, ModelRequest, ProviderStatus
 from core.config import Settings
 from core.store import CostSummary, Store
+
+STARTED_KEPT = 200
 
 
 class SpendStatus(CostSummary):
@@ -77,6 +81,8 @@ class CappedProvider:
     def __init__(self, inner: Callable[[], ModelProvider], guard: SpendGuard) -> None:
         self._inner = inner
         self._guard = guard
+        self._started: OrderedDict[str, None] = OrderedDict()
+        """Requests already under way: the cap stops new ones, never one halfway through."""
 
     @property
     def name(self) -> str:
@@ -86,9 +92,13 @@ class CappedProvider:
         return await self._inner().status()
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
-        refusal = await self._guard.refusal()
-        if refusal is not None:
-            yield refusal
-            return
+        if request.trace_id not in self._started:
+            refusal = await self._guard.refusal()
+            if refusal is not None:
+                yield refusal
+                return
+            self._started[request.trace_id] = None
+            while len(self._started) > STARTED_KEPT:
+                self._started.popitem(last=False)
         async for event in self._inner().stream(request):
             yield event
