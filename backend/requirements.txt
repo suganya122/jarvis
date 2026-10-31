@@ -33,7 +33,7 @@ playwright==1.64.1
 pycparser==3.12
 pydantic==2.14.1
 pydantic_core==2.50.1
-pyee==14.0.0
+pyee==15.0.0
 python-dotenv==1.2.4
 PyYAML==6.0.3
 requests==2.34.2
