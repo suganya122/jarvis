@@ -128,8 +128,13 @@ async def test_claude_code_is_run_watched_and_checked_when_it_finishes(
     await rig.settle()
     assert rig.told[0] == (
         "Tip calculator",
-        "Claude Code has finished Tip calculator. I'm checking the work now.",
+        "Claude Code has finished Tip calculator. Shall I check it for errors?",
     )
+    assert rig.host.sends == []  # not checked unasked
+    check_it = rig.registry.get("check_project")
+    assert check_it is not None
+    assert (await check_it.run({"name": "Tip calculator"}, CTX)).ok  # the user said yes
+    await rig.settle()
     check = rig.host.sends[0].text
     assert "Tests: 3 passed" in check and str(claude).replace(str(Path.home()), "~", 1) in check
     assert "run its tests and its build" in check and "tell_claude_code" in check

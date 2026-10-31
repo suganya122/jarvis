@@ -1,9 +1,10 @@
 """Watching a project while another AI works on it: no model calls, only the window.
 
 Every POLL_S it finds the window (by part of its title) and looks for the control that shows only
-while that AI is working (Claude and ChatGPT show "Stop"). Seen working and then gone twice in a
-row: it has stopped, the user is told (aloud when Jarvis is free, and on screen), and Jarvis
-checks the work (core.projects.review), which may send it back for fixes and watch again."""
+while that AI is working (Claude and ChatGPT show "Stop"); for Claude Code run by Jarvis, it reads
+the run's files. Once it has stopped, the user is told (aloud when Jarvis is free, and on screen)
+and asked whether Jarvis should check it for errors; on yes, Jarvis checks the work
+(core.projects.review), which may send it back for fixes and watch again."""
 
 import asyncio
 import contextlib
@@ -200,14 +201,18 @@ class ProjectWatcher:
             await self._finish(project, "answered", f"Claude Code has finished {project.name}.")
 
     async def _finish(self, project: Project, status: str, said: str) -> None:
-        checking = status == "answered" and self._review is not None and project.rounds < self._rounds
-        if checking:
-            said = f"{said.split(':')[0].rstrip('.')}. I'm checking the work now."
-        await self._store.update(project, status=status, detail=said, review_due=checking)
+        """It stopped: the user is told and asked whether to check it (never checked unasked)."""
+        detail = said
+        if status == "answered" and self._review is not None and project.rounds < self._rounds:
+            said = f"{said.split(':')[0].rstrip('.')}. Shall I check it for errors?"
+            detail = f"{said} (Asked the user: on yes, call check_project.)"
+        await self._store.update(project, status=status, detail=detail, review_due=False)
         self._watches.pop(project.id, None)
         await self._tell(project.name, said)
-        if checking:
-            self._start_review(project)
+
+    def check(self, project: Project) -> None:
+        """The user said yes to checking it: a round starts as soon as Jarvis is free."""
+        self._start_review(project)
 
     def _start_review(self, project: Project) -> None:
         running = self._reviewing.get(project.id)

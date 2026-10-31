@@ -150,20 +150,34 @@ async def test_when_the_other_ai_stops_jarvis_checks_the_work_in_rounds(
     await rig.projects.watcher.poll()
     assert rig.controls.calls[0] == {"window_id": "w2", "query": "Stop", "limit": 10}  # the Claude window
     assert "[working with Claude]" in await rig.projects.context()
-    rig.host.free = False  # the user is talking to Jarvis: the check waits
     for _ in range(3):
         await rig.projects.watcher.poll()
     await rig.settle()
-    assert rig.told == [
-        ("Bakery website", "Claude has stopped on Bakery website. I'm checking the work now.")
-    ]
+    asked = ("Bakery website", "Claude has stopped on Bakery website. Shall I check it for errors?")
+    assert rig.told == [asked] and rig.host.sends == []  # never checked unasked
+    for _ in range(2):
+        await rig.projects.watcher.poll()
+    await rig.settle()
+    assert rig.host.sends == []  # still waiting for their answer
+    assert "check_project" in await rig.projects.context()  # so a "yes" is understood
+
+    rig.host.free = False  # they say yes while still talking to Jarvis: the check waits
+    check = rig.registry.get("check_project")
+    assert check is not None
+    started = await check.run({"name": "bakery"}, CTX)
+    assert started.ok
+    await rig.settle()
     assert rig.host.sends == []
     rig.host.free = True
     await rig.projects.watcher.poll()
     await rig.settle()
     (send,) = rig.host.sends
     assert send.session_id == "project-session"
-    assert "round 1:" in send.text and "not a new request" in send.text and "0 errors and 0 bugs" in send.text
+    assert (
+        "round 1:" in send.text
+        and "said yes to checking it" in send.text
+        and "0 errors and 0 bugs" in send.text
+    )
     assert "fix every bug" in send.text and "professional, modern, attractive" in send.text
     assert "check it yourself, the way that kind of work is checked; never take its word for it" in send.text
     assert "they can try it now" in send.text
@@ -217,7 +231,7 @@ async def test_a_window_that_closes_or_never_shows_work_is_reported_not_watched_
     for _ in range(NEVER_SEEN_AFTER):
         await quick.projects.watcher.poll()
     await quick.settle()
-    assert ("Poem", "ChatGPT seems to have answered on Poem. I'm checking the work now.") in quick.told
+    assert ("Poem", "ChatGPT seems to have answered on Poem. Shall I check it for errors?") in quick.told
 
 
 def test_the_window_is_found_by_part_of_its_title() -> None:
@@ -358,7 +372,7 @@ class LiveRuntime:
         return None
 
 
-def test_in_a_live_conversation_it_says_when_claude_stops_and_checks_the_work(
+def test_in_a_live_conversation_it_says_when_claude_stops_and_checks_on_yes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The bug: live mode sits in "listening", which the watcher took for busy, so it never spoke
@@ -389,11 +403,14 @@ def test_in_a_live_conversation_it_says_when_claude_stops_and_checks_the_work(
                 )  # live, nobody talking
                 for _ in range(3):  # working, then stopped twice
                     await projects.watcher.poll()
+                await voice.until(lambda: len(voice.ears.said) >= 2)
+                asked = "Claude has stopped on Bakery website. Shall I check it for errors?"
+                assert voice.ears.said[1] == asked and rt.sends == []  # asked, not checked
+                check = registry.get("check_project")
+                assert check is not None
+                assert (await check.run({"name": "Bakery website"}, CTX)).ok  # they said yes
                 await voice.until(lambda: len(rt.sends) == 1)  # the check started at once
                 await voice.until(lambda: len(voice.ears.said) >= 3)
-                assert (
-                    voice.ears.said[1] == "Claude has stopped on Bakery website. I'm checking the work now."
-                )
                 assert voice.ears.said[2] == "Claude built it; I've asked it to test and polish it."
                 assert "round 1:" in rt.sends[0].text
         finally:

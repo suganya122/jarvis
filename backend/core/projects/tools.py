@@ -155,3 +155,41 @@ class ProjectStatus:
         if not projects:
             return ToolResult(ok=True, output="No projects yet.")
         return ToolResult(ok=True, output="\n".join(f"- {describe(p)}" for p in projects[:20]))
+
+
+class CheckProject:
+    info = ToolInfo(
+        name="check_project",
+        description=(
+            "Check a project's result for errors (test it, try it, have the other AI fix what's wrong). Only "
+            "when the user says yes to checking it, or asks you to check it."
+        ),
+        input_schema=FindArgs.model_json_schema(),
+        risk=RiskLevel.READ,
+        capabilities=(),
+        source="core",
+    )
+
+    def __init__(self, store: ProjectStore, check: Callable[[Project], None]) -> None:
+        self._store = store
+        self._check = check
+
+    async def assess(self, args: dict[str, Any]) -> ToolAssessment:
+        return ToolAssessment(risk=RiskLevel.READ, summary="Check the project for errors")
+
+    async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        a = _parse(FindArgs, args)
+        if isinstance(a, str):
+            return ToolResult(ok=False, output=a)
+        project = await self._store.find(a.name) if a.name else next(iter(await self._store.active()), None)
+        if project is None:
+            return ToolResult(ok=False, output=f"No project called “{a.name}”.")
+        if project.status in WATCHED:
+            return ToolResult(
+                ok=True, output=f"{project.built_with or 'It'} is still working; check it once it stops."
+            )
+        await self._store.update(project, status="answered", review_due=True, detail="Checking it now.")
+        self._check(project)
+        return ToolResult(
+            ok=True, output="Checking starts as soon as this reply ends. Tell them in a few words."
+        )

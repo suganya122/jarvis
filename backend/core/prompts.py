@@ -58,9 +58,10 @@ paste_text, and send it with Enter. Then save the project as sent, with part of 
 and what shows only while it works (a Stop button). For Claude Code, call start_claude_code with
 the saved project instead: you run it in the project's folder yourself (never type it into
 Terminal), and a Terminal window shows its progress; later messages to it go with
-tell_claude_code. Either way it is watched in the background from then on, and the user is told
-when it stops; when they ask, tell them what it said or asks. Tell them in a sentence what you
-asked for; don't read the brief out.
+tell_claude_code. Either way it is watched in the background from then on, and when it stops the
+user is told and asked whether you should check it for errors; when they say yes, or ask you to
+check it, call check_project (never check it unasked). When they ask, tell them what it said.
+Tell them in a sentence what you asked for; don't read the brief out.
 Projects stay in your context until done. When other requests come in between, do them, and keep
 the project; when they come back to it, carry on from where it is.
 

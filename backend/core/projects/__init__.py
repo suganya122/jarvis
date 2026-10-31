@@ -19,7 +19,7 @@ from contracts.worker import WorkerConfig
 from core.projects.cc_tools import StartClaudeCode, TellClaudeCode
 from core.projects.review import MAX_ROUNDS, Host, Reviewer, RuntimeHost
 from core.projects.store import ProjectStore
-from core.projects.tools import ProjectStatus, SaveProject, describe
+from core.projects.tools import CheckProject, ProjectStatus, SaveProject, describe
 from core.projects.watch import ProjectWatcher
 from core.toolbox import ToolRegistry
 
@@ -54,6 +54,7 @@ class Projects:
         for tool in (
             SaveProject(self.store, watch),
             ProjectStatus(self.store),
+            CheckProject(self.store, lambda project: self.watcher.check(project)),
             StartClaudeCode(self.store, protected, watch),
             TellClaudeCode(self.store, protected, watch),
         ):
