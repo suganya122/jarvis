@@ -254,10 +254,12 @@ def test_an_ability_that_listens_decides_what_jarvis_acts_on(tmp_path: Path) -> 
         built_it = await registry.get("build_ability").run({"goal": "only listen to my voice"}, CTX)  # type: ignore[union-attr]
         assert built_it.ok
         audio = b"\x01\x00" * 1600  # 0.1 s
-        assert await abilities.check_voice(audio, "what time is it") is True
-        assert await abilities.check_voice(audio, "breaking news on tv") is False
+        assert await abilities.check_voice(audio, "what time is it") == (True, "")
+        assert await abilities.check_voice(audio, "breaking news on tv") == (False, "the TV")
         for _ in range(25):
             await abilities.check_voice(audio, "again")
+        listed = await registry.get("list_abilities").run({}, CTX)  # type: ignore[union-attr]
+        assert "only_me" in listed.output and "heard/" in listed.output and listed.output.endswith("keep")
 
     asyncio.run(go())
     kept = list((tmp_path / "only_me" / "heard").glob("*.wav"))
@@ -275,7 +277,10 @@ def test_a_broken_listening_ability_never_makes_jarvis_deaf(tmp_path: Path) -> N
         registry = ToolRegistry()
         abilities = Abilities(tmp_path, registry, lambda: provider, no_cost)
         await registry.get("build_ability").run({"goal": "check voices"}, CTX)  # type: ignore[union-attr]
-        assert await abilities.check_voice(b"\x00\x00" * 100, "hello") is True
+        act, trouble = await abilities.check_voice(b"\x00\x00" * 100, "hello")
+        assert act and trouble.startswith("my flaky ability isn't working")  # Jarvis says so, once
+        listed = await registry.get("list_abilities").run({}, CTX)  # type: ignore[union-attr]
+        assert "failed: " in listed.output and "boom" in listed.output  # what to fix
 
     asyncio.run(go())
 

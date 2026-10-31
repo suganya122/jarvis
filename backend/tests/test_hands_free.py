@@ -770,19 +770,79 @@ def test_an_ability_that_listens_can_stop_a_request_being_acted_on(monkeypatch: 
         rig = Rig(monkeypatch)
         heard: list[str] = []
 
-        async def only_me(audio: bytes, text: str) -> bool:
+        async def only_me(audio: bytes, text: str) -> tuple[bool, str]:
             heard.append(text)
-            return "news" not in text
+            return ("news" not in text, "I don't recognise this voice (match 0.31)" if "news" in text else "")
 
         rig.hf._d.check_voice = only_me
         rig.rec.last_audio = lambda: b"\x00\x00" * 160  # type: ignore[attr-defined]
         async with rig.running():
-            await rig.speak("jarvis the news at nine")  # the TV, say: not acted on
+            await rig.speak("jarvis the news at nine")  # the TV, say: not acted on, and it says so
             await rig.until(lambda: heard == ["the news at nine"])
-            await asyncio.sleep(0.3)
+            await rig.until(lambda: len(rig.ears.said) == 1)
             assert rig.turns == []
+            assert rig.ears.said[0].startswith(
+                "I didn't act on that: I don't recognise this voice. If that was you"
+            )
+            await rig.speak("the news at ten")  # again: said shorter
+            await rig.until(lambda: len(rig.ears.said) == 2)
+            assert rig.ears.said[1] == "I didn't act on that: I don't recognise this voice."
             await rig.speak("jarvis what time is it")
-            await rig.until(lambda: rig.ears.said == ["It is noon."])
+            await rig.until(lambda: rig.ears.said[-1:] == ["It is noon."])
             assert [t for t, _ in rig.turns] == ["what time is it"]
+
+    asyncio.run(run())
+
+
+def test_live_it_doesnt_answer_every_sentence_it_holds_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+
+        async def only_me(audio: bytes, text: str) -> tuple[bool, str]:
+            return "tv" not in text, "I don't recognise this voice"
+
+        rig.hf._d.check_voice = only_me
+        rig.rec.last_audio = lambda: b"\x00\x00" * 160  # type: ignore[attr-defined]
+        async with rig.running():
+            await rig.speak("jarvis tv news")
+            await rig.until(lambda: len(rig.ears.said) == 1)
+            for line in ("tv weather", "tv sport"):
+                await rig.speak(line)
+                await asyncio.sleep(0.3)
+            assert len(rig.ears.said) == 1 and rig.turns == []
+
+    asyncio.run(run())
+
+
+def test_a_voice_check_that_isnt_working_is_said_once_and_it_answers_anyway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        broken = [True]
+
+        async def flaky(audio: bytes, text: str) -> tuple[bool, str]:
+            if text == "crash":
+                raise RuntimeError("boom")
+            return True, "my voice guard ability isn't working (it crashed: no module numpy)" if broken[
+                0
+            ] else ""
+
+        rig.hf._d.check_voice = flaky
+        rig.rec.last_audio = lambda: b"\x00\x00" * 160  # type: ignore[attr-defined]
+        async with rig.running():
+            await rig.speak("jarvis what time is it")
+            await rig.until(lambda: len(rig.ears.said) == 2)
+            heads_up = "Heads up: my voice guard ability isn't working, so I'm answering anyone for now."
+            assert rig.ears.said == [f"{heads_up} Ask me to fix it.", "It is noon."]
+            await rig.speak("and now")  # still broken: not said again
+            await rig.until(lambda: len(rig.ears.said) == 3)
+            broken[0] = False
+            await rig.speak("and again")  # working again
+            await rig.until(lambda: len(rig.ears.said) == 4)
+            await rig.speak("crash")  # broken again: said again
+            await rig.until(lambda: len(rig.ears.said) == 6)
+            assert rig.ears.said[4].startswith("Heads up: my voice check isn't working")
+            assert len(rig.turns) == 4
 
     asyncio.run(run())

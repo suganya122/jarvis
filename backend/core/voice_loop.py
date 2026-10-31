@@ -102,7 +102,7 @@ class VoiceLoop:
         begin_context: Callable[[], None],
         for_voice: Callable[[str], Awaitable[tuple[ActiveContext | None, str]]],
         extra_env: dict[str, str] | None = None,
-        check_voice: Callable[[bytes, str], Awaitable[bool]] | None = None,
+        check_voice: Callable[[bytes, str], Awaitable[tuple[bool, str]]] | None = None,
     ) -> None:
         self._data_dir = data_dir
         self._store = store

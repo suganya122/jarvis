@@ -50,6 +50,7 @@ from core.speech_text import (
     match_wake,
     speakable,
 )
+from core.voice_gate import VoiceGate
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +69,7 @@ class HandsFree(TurnsMixin):
         self._turn_task: asyncio.Task[str] | None = None
         self._session: str | None = None
         self._session_at = 0.0
-        self._mic_on = False
-        self._dropped = False
-        self._woken = False
+        self._mic_on = self._dropped = self._woken = False
         self.floor = NoiseFloor()
         self._speak_lock = asyncio.Lock()
         self._offline = False
@@ -83,6 +82,7 @@ class HandsFree(TurnsMixin):
         self._lead_in: list[str] = []  # the sound of someone cutting in, for the next request
         self._echo_of, self._said_at = "", 0.0  # its last words: kept out of what's heard right after
         self._told = ""
+        self._gate = VoiceGate(deps, self._say)  # abilities that listen; it says when they hold back
 
     # ---- lifecycle and inputs -----------------------------------------------------
 

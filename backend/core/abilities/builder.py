@@ -59,8 +59,10 @@ Reply with a JSON object, then the code in one ```python block, and nothing else
 - If it must judge everything the user says to the assistant (for example, only letting the user's
   own voice through), add "hook": "hears". Then, before the assistant acts on any request, run() is
   also called with {{"hook": "hears", "wav": "<path>", "text": "<what was heard>"}} and returns
-  "keep" or "ignore: <why>". It must answer within a few seconds, so keep it light (numpy rather
-  than a big framework where possible) and cache what it learned in a file in its own folder. The
+  "keep" or "ignore: <why, in a few plain words the person hears, e.g. I don't recognise this
+  voice>" (details, like a score, in brackets after it). It must answer within a few seconds, so
+  keep it light (numpy rather than a big framework where possible) and cache what it learned in a
+  file in its own folder. The
   assistant keeps the last 20 requests as WAV files (16 kHz mono) in its folder's heard/ folder,
   newest last: use them to learn the user's voice when asked (e.g. {{"action": "enroll"}}). Until it
   has learned, answer "keep". The test run must not need a real recording.

@@ -115,15 +115,20 @@ class BuildAbility:
 class ListAbilities:
     info = ToolInfo(
         name="list_abilities",
-        description="List the abilities you have built for yourself.",
+        description=(
+            "List the abilities you have built for yourself; for one that listens, where it is and what "
+            "it answered lately (why it held a request back, or how it failed), to fix it."
+        ),
         input_schema=_Args.model_json_schema(),
         risk=RiskLevel.READ,
         capabilities=(),
         source="core",
     )
 
-    def __init__(self, specs: Callable[[], list[AbilitySpec]]) -> None:
-        self._specs = specs
+    def __init__(
+        self, specs: Callable[[], list[AbilitySpec]], lately: Callable[[AbilitySpec], str] = lambda _: ""
+    ) -> None:
+        self._specs, self._lately = specs, lately
 
     async def assess(self, args: dict[str, Any]) -> ToolAssessment:
         return ToolAssessment(risk=RiskLevel.READ, summary="List my abilities")
@@ -132,7 +137,8 @@ class ListAbilities:
         specs = self._specs()
         if not specs:
             return ToolResult(ok=True, output="No abilities built yet.")
-        return ToolResult(ok=True, output="\n".join(f"- {s.name}: {s.description}" for s in specs))
+        lines = (f"- {s.name}: {s.description}{self._lately(s)}" for s in specs)
+        return ToolResult(ok=True, output="\n".join(lines))
 
 
 class RemoveAbility:

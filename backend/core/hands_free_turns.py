@@ -39,6 +39,7 @@ from core.speech_text import (
     without_echo,
     yes_no,
 )
+from core.voice_gate import VoiceGate
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class TurnsMixin:
     _lead_in: list[str]
     _echo_of: str
     _said_at: float
+    _gate: VoiceGate
 
     async def _say(self, text: str) -> None:
         raise NotImplementedError
@@ -208,14 +210,7 @@ class TurnsMixin:
 
     async def _for_us(self, text: str) -> bool:
         """Abilities that listen get the say: e.g. one that only lets the user's own voice through."""
-        audio = getattr(self._d.recognizer, "last_audio", lambda: b"")()
-        if self._d.check_voice is None or not audio:
-            return True
-        try:
-            return await self._d.check_voice(audio, text)
-        except Exception:  # a broken ability must never make it deaf
-            log.warning("an ability that listens failed; acting on the request", exc_info=True)
-            return True
+        return await self._gate.allows(getattr(self._d.recognizer, "last_audio", lambda: b"")(), text)
 
     def _remember_said(self, spoken: str) -> None:
         """What it just said, for a few seconds: the microphone may still be hearing it."""

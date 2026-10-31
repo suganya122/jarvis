@@ -18,6 +18,7 @@ import logging
 import shutil
 import time
 import wave
+from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -33,6 +34,8 @@ log = logging.getLogger(__name__)
 HEARD = "heard"
 KEEP_RECORDINGS = 20
 HEARS_TIMEOUT_S = 8.0
+ANSWERS_KEPT = 5
+"""What a listening ability said about the last few requests: list_abilities shows it."""
 
 
 def _keep_recording(folder: Path, pcm: bytes) -> Path:
@@ -60,10 +63,11 @@ class Abilities:
         self._folder = folder
         self._registry = registry
         self._specs: dict[str, AbilitySpec] = {}
+        self._answers: defaultdict[str, deque[str]] = defaultdict(lambda: deque(maxlen=ANSWERS_KEPT))
         builder = Builder(provider, record_cost, folder)
         for tool in (
             BuildAbility(builder, lambda: set(self._specs), self.add),
-            ListAbilities(lambda: list(self._specs.values())),
+            ListAbilities(lambda: list(self._specs.values()), self._lately),
             RemoveAbility(self.remove),
         ):
             registry.register(tool)
@@ -89,19 +93,37 @@ class Abilities:
         self._specs[spec.name] = spec
         return tool.info.name
 
-    async def check_voice(self, audio: bytes, text: str) -> bool:
+    async def check_voice(self, audio: bytes, text: str) -> tuple[bool, str]:
         """Before Jarvis acts on a request: every ability that listens may say "ignore" (say, it
-        isn't the user's voice). A broken or slow one never makes Jarvis deaf: it counts as keep."""
+        isn't the user's voice). A broken or slow one never makes Jarvis deaf: it counts as keep.
+        Returns (act on it?, what to tell the person: why it was held back, or which check isn't
+        working; '' when all is well). Their last answers are in list_abilities, for fixing them."""
+        trouble = ""
         for spec in [s for s in self._specs.values() if s.hook == "hears"]:
-            folder = self._folder / spec.name
+            folder, label = self._folder / spec.name, spec.name.replace("_", " ")
             wav = await asyncio.to_thread(_keep_recording, folder / HEARD, audio)
             ran = await runner.run(folder, {"hook": "hears", "wav": str(wav), "text": text}, HEARS_TIMEOUT_S)
-            if ran.ok and ran.output.strip().casefold().startswith("ignore"):
-                log.info("ability %s: not acting on that request (%s)", spec.name, ran.output[:80])
-                return False
+            answer = ran.output.strip()
+            self._answers[spec.name].append(
+                answer[:200] if ran.ok else f"failed: {answer[-300:]}"
+            )  # the error
+            if ran.ok and answer.casefold().startswith("ignore"):
+                log.info("ability %s: not acting on that request (%s)", spec.name, answer[:80])
+                return False, answer[len("ignore") :].lstrip(" :-") or f"my {label} ability held it back"
             if not ran.ok:
-                log.warning("ability %s couldn't check a request: %s", spec.name, ran.output[:200])
-        return True
+                log.warning("ability %s couldn't check a request: %s", spec.name, answer[-300:])
+                trouble = f"my {label} ability isn't working ({answer.splitlines()[-1:][0][:120]})"
+        return True, trouble
+
+    def _lately(self, spec: AbilitySpec) -> str:
+        """For list_abilities: where a listening ability is and what it said lately, to fix it."""
+        if spec.hook != "hears":
+            return ""
+        said = " | ".join(self._answers[spec.name]) or "nothing since Jarvis started"
+        return (
+            f" It checks every request heard; its folder is {self._folder / spec.name} (recordings in"
+            f" {HEARD}/). Its last answers, newest last: {said}"
+        )
 
     def remove(self, name: str) -> bool:
         if name not in self._specs:
