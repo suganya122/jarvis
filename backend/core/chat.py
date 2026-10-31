@@ -297,7 +297,7 @@ class ChatService(RoutesMixin):
                 await self._stopped(send, emit, turn, "loop_detected")
                 return
             tier = self._maybe_escalate(turn, tier, step_number, settings)
-            if turn.total_tokens > limits.max_turn_tokens:
+            if turn.work_tokens > limits.max_turn_tokens:
                 await self._stopped(send, emit, turn, "budget")
                 return
         await self._stopped(send, emit, turn, "step_limit")

@@ -162,10 +162,11 @@ class RouterSettings(BaseModel):
 
 
 class AgentSettings(BaseModel):
-    max_steps: int = Field(default=15, ge=1, le=50)
-    """Model calls per turn; each tool round is one step."""
-    max_turn_tokens: int = Field(default=200_000, ge=1_000)
-    """Stop the turn once input + output tokens across its steps exceed this."""
+    max_steps: int = Field(default=40, ge=1, le=60)
+    """Model calls per turn; each tool round is one step. Paying on a real site takes 20 or more."""
+    max_turn_tokens: int = Field(default=400_000, ge=1_000)
+    """Stop the turn once its work passes this many tokens (Turn.work_tokens: what is read again
+    from the cache counts a tenth, as it costs)."""
     max_identical_calls: int = Field(default=2, ge=1, le=10)
     """The same call giving the same result this many times in a row, in one turn, stops it as a loop
     (reading a page again after it changed is not one)."""
@@ -299,8 +300,10 @@ class PluginSettings(BaseModel):
     messages_per_minute: int = Field(default=10, ge=1, le=120)
 
 
-DEFAULTS_VERSION = 3
+DEFAULTS_VERSION = 4
 """Bumped when a default changes in a way saved settings should pick up once (see upgrade_saved)."""
+OLD_MAX_STEPS, OLD_MAX_TURN_TOKENS = 15, 200_000
+"""Until 0.1.32: too little for paying on a real site, which then stopped halfway."""
 
 
 def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
@@ -321,6 +324,13 @@ def upgrade_saved(data: dict[str, Any]) -> dict[str, Any]:
             saved = {}
         if _was_old_default(saved):
             data["tools"] = {**tools, "policies": {c.value: m for c, m in default_policies().items()}}
+    agent = data.get("agent")
+    if data.get("defaults_version", 0) < 4 and isinstance(agent, dict):  # payments stopped halfway
+        if agent.get("max_steps") == OLD_MAX_STEPS:
+            agent = {**agent, "max_steps": AgentSettings().max_steps}
+        if agent.get("max_turn_tokens") == OLD_MAX_TURN_TOKENS:
+            agent = {**agent, "max_turn_tokens": AgentSettings().max_turn_tokens}
+        data["agent"] = agent
     return {**data, "defaults_version": DEFAULTS_VERSION}
 
 

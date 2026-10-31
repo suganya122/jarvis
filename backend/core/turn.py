@@ -33,9 +33,11 @@ class Turn:
     """'used' or 'discarded' when a voice speculation was offered to this turn."""
 
     @property
-    def total_tokens(self) -> int:
+    def work_tokens(self) -> int:
+        """What the turn has taken, as it costs: every step sends the conversation again, and that
+        part, read from the cache, costs a tenth of new input."""
         u = self.usage
-        return u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_write_tokens
+        return u.input_tokens + u.output_tokens + u.cache_write_tokens + u.cache_read_tokens // 10
 
     def add_usage(self, done: Completed) -> None:
         a, b = self.usage, done.usage

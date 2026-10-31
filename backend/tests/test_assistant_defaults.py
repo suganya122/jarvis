@@ -128,3 +128,22 @@ def test_settings_saved_with_the_0_1_10_defaults_are_upgraded_too() -> None:
     assert Settings().tools.policies[Capability.SEND_EXTERNAL] == "allow"
     assert Settings().tools.policies[Capability.PURCHASE] == "ask"
     assert Settings().tools.full_automation is True
+
+
+def test_saved_limits_that_stopped_payments_halfway_are_raised_once() -> None:
+    """Paying on a real site stopped with "this is taking more work than I do in one go": every
+    step sends the page again, and that cached part counted in full."""
+    old = Settings.model_validate(
+        upgrade_saved({"defaults_version": 3, "agent": {"max_steps": 15, "max_turn_tokens": 200_000}})
+    )
+    assert (old.agent.max_steps, old.agent.max_turn_tokens) == (40, 400_000)
+    chosen = Settings.model_validate(upgrade_saved({"defaults_version": 3, "agent": {"max_steps": 8}}))
+    assert chosen.agent.max_steps == 8  # a limit the user set is kept
+    from contracts.model import Usage
+    from core.turn import Turn
+
+    turn = Turn.__new__(Turn)
+    turn.usage = Usage(
+        input_tokens=2_000, output_tokens=1_000, cache_read_tokens=900_000, cache_write_tokens=20_000
+    )
+    assert turn.work_tokens == 113_000  # under the limit: the rereads cost a tenth
