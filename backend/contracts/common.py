@@ -31,7 +31,7 @@ class RiskLevel(StrEnum):
         return self in {RiskLevel.DESTRUCTIVE, RiskLevel.PURCHASE}
 
 
-_NUMBER = r"(\d[\d,]*(?:\.\d+)?)"
+_NUMBER = r"(\d(?:[\d,]*\d)?(?:\.\d+)?)"
 MONEY = re.compile(
     rf"(?:[₹$€£¥₨]|\b(?:rs|inr|usd|eur|gbp|aed|sgd)\.?)\s*{_NUMBER}|{_NUMBER}\s*(?:[₹$€£¥₨]|(?:rupees|dollars)\b)",
     re.I,

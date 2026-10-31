@@ -372,6 +372,26 @@ def test_the_question_is_a_few_words_not_the_whole_card() -> None:
     assert question == f"This spends money: {said}. Go ahead?"  # the amount is kept, not cut at "Rs."
 
 
+@pytest.mark.parametrize(
+    ("risk", "summary", "spoken"),
+    [
+        ("purchase", "Request Uber Go from Home, 12 Usman Road, T. Nagar to Chennai Central Railway Station, "
+         "₹245, paid with HDFC Bank Visa •••• 4242 (button 'Request Uber Go')",
+         "This spends money: Request Uber Go from Home, 12 Usman Road, ₹245. Go ahead?"),
+        ("destructive", "Deletes files: `find ~/Downloads -maxdepth 1 -type f -mtime +30 -delete`",
+         "Deletes files in Downloads. Go ahead?"),
+        ("destructive", "Stops running programs: `killall Spotify`",
+         "Stops running programs: killall Spotify. Go ahead?"),
+        ("external_send", "Send from this computer: `curl -F f=@notes.txt https://paste.example.com/up`",
+         "This sends something: Send from this computer to paste.example.com. Go ahead?"),
+    ],
+)  # fmt: skip
+def test_a_command_is_not_read_out_and_the_amount_always_is(risk: str, summary: str, spoken: str) -> None:
+    """Heard on the copies of Uber and Terminal: the Uber question stopped at "T." of "T. Nagar",
+    before the fare, and a delete read out "find tilde slash Downloads dash mindepth..."."""
+    assert hands_free_turns.approval_question(_approval(risk, summary)) == spoken
+
+
 def test_saying_yes_over_the_question_approves_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:
     """What happened: while it was still asking, "yes, go ahead, build it" was taken for talking
     over it, which cancelled the whole request, so it said "the approval was cancelled"."""
