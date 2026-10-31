@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from contracts.common import Capability, RiskLevel
+from contracts.common import Capability, RiskLevel, amounts
 from core.approvals import ApprovalBroker
 from core.config import default_policies
 from core.policy import decide
@@ -46,6 +46,19 @@ def test_writes_ask_by_default_and_can_be_remembered() -> None:
 def test_high_risk_always_asks_even_when_allowed_or_granted(risk: RiskLevel) -> None:
     decision = check(risk, FS_WRITE, grants={"t"}, fs_write="allow")
     assert decision.action == "ask" and not decision.can_remember
+
+
+def test_a_payment_already_approved_goes_on_but_deleting_still_asks() -> None:
+    def paid(risk: RiskLevel, **overrides: str) -> str:
+        policies = {**default_policies(), **{Capability(k): v for k, v in overrides.items()}}
+        return decide(tool="t", risk=risk, capabilities=(Capability.PURCHASE,), policies=policies,  # type: ignore[arg-type]
+                      tainted=True, session_grants=set(), payment_approved=True).action  # fmt: skip
+
+    assert paid(RiskLevel.PURCHASE) == "allow"
+    assert paid(RiskLevel.DESTRUCTIVE) == "ask"
+    assert paid(RiskLevel.PURCHASE, purchase="deny") == "deny"
+    assert amounts("Pay ₹1,340.50 (₹77 + Rs. 25 delivery), 2 items, 450 rupees") == [1340.5, 77, 25, 450]
+    assert amounts("2 tickets for Friday") == []
 
 
 def test_deny_beats_everything() -> None:

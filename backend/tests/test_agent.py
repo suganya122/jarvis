@@ -169,6 +169,30 @@ def test_destructive_and_purchase_always_ask_and_cannot_be_remembered(make: Make
     assert len(tools["note"].runs) == 1
 
 
+def test_one_yes_pays_for_the_whole_checkout_but_not_more_or_the_next_order(make: Make) -> None:
+    """Ordering on Blinkit asked "This spends money" at every step. Now the first yes, with the
+    amount, covers the rest of that payment; a bigger amount, or a new request, asks again."""
+    script = [
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134 to Blinkit (₹77 + fees)"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay now"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134 with the HDFC card"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹2,000"})]),
+        FakeStep(text="Ordered."),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134"})]),
+        FakeStep(text="Ordered again."),
+    ]
+    harness, tools, _ = make(script)
+    asked: list[str] = []
+    with harness.ws() as ws:
+        handshake(ws)
+        first = turn(ws, "order milk", approve=lambda e: (asked.append(e["summary"]) is None, False))
+        session = of(first, "chat.started")[0]["session_id"]
+        turn(ws, "order it again", approve=lambda e: (asked.append(e["summary"]) is None, False),
+             session_id=session, request_id="r2")  # fmt: skip
+    assert asked == ["buy Pay ₹134 to Blinkit (₹77 + fees)", "buy Pay ₹2,000", "buy Pay ₹134"]
+    assert len(tools["buy"].runs) == 5
+
+
 def test_capability_turned_off_is_denied_without_asking(make: Make) -> None:
     settings = Settings()
     settings.tools.policies = {**settings.tools.policies, "fs.write": "deny"}  # type: ignore[dict-item]

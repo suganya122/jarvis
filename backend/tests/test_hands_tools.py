@@ -54,6 +54,25 @@ async def test_button_labels_raise_risk(env: T.HandsEnv) -> None:
     assert menu.risk is RiskLevel.WRITE and "File → Say hello" in menu.summary
 
 
+async def test_a_price_on_a_button_is_shopping_and_paying_is_said_with_the_amount(env: T.HandsEnv) -> None:
+    """Real Blinkit: the cart button reads '1 item ₹77', the cart's '₹134 TOTAL Proceed'. Opening
+    them isn't paying; 'Proceed To Pay', or the click described as paying ₹134, is."""
+    names = await ids(env)
+    window = next(iter(env.hands.windows.values()))  # type: ignore[attr-defined]
+    click = T.ClickElement()
+
+    def risk(label: str, about: str = "") -> RiskLevel:
+        window.nodes["fake|w1/increment"].name = label
+        return click.assess(T.ClickArgs(element_id=names["Increment"], about=about), env).risk
+
+    for shopping in ("1 item ₹77", "₹134 TOTAL Proceed", "22 MINS Amul Taaza Milk 1 ltr ₹77 ADD"):
+        assert risk(shopping) is RiskLevel.WRITE, shopping
+    assert risk("₹134 TOTAL Proceed To Pay") is RiskLevel.PURCHASE
+    assert risk("Continue", about="Pay ₹134 to Blinkit with the HDFC card") is RiskLevel.PURCHASE
+    asked = click.assess(T.ClickArgs(element_id=names["Increment"], about="Pay ₹134 to Blinkit"), env)
+    assert asked.summary.startswith("Pay ₹134 to Blinkit (")  # what it does comes first, then the button
+
+
 async def test_password_field_is_refused_and_hidden(env: T.HandsEnv) -> None:
     names = await ids(env)
     typed = T.TypeText().assess(T.TypeArgs(element_id=names["Password"], text="x"), env)
@@ -158,7 +177,8 @@ def test_describe_changes() -> None:
 
 
 def test_a_click_that_pays_asks_with_what_it_pays_whatever_the_button_says() -> None:
-    from workers.hands.risk import MONEY, label_risk
+    from contracts.common import MONEY
+    from workers.hands.risk import label_risk
 
     assert label_risk("Confirm payment") is RiskLevel.PURCHASE
     assert label_risk("Request UberGo ride") is RiskLevel.PURCHASE
@@ -197,7 +217,7 @@ async def test_paste_puts_long_text_in_whole_and_gives_the_clipboard_back(
 
 
 def test_buttons_that_pay_or_delete_ask_however_they_are_worded() -> None:
-    from workers.hands.risk import MONEY
+    from contracts.common import MONEY
 
     paying = ("Place your order", "Request UberGo", "Confirm UberX", "Complete purchase", "Confirm payment")
     for label in paying:

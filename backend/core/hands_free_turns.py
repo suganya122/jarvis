@@ -356,7 +356,7 @@ def brief(summary: str, limit: int = SPOKEN_ASK_CHARS) -> str:
     if len(text) <= limit:
         return text
     cut = text[:limit]
-    for mark in (". ", ": ", "; ", ", "):
+    for mark in (". ", ": ", "; ", " (", ", "):
         if (end := cut.rfind(mark)) >= limit // 3:
             return cut[:end]
     return cut.rsplit(" ", 1)[0]

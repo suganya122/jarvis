@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from contracts.capture import HighlightBox
-from contracts.common import Trust
+from contracts.common import RiskLevel, Trust, amounts
 from contracts.context import ActiveContext
 from contracts.model import ImageData, ToolCallRequested, ToolResultBlock
 from contracts.tools import ToolAssessment, ToolContext, ToolResult
@@ -43,6 +43,9 @@ class ChatPermissions:
     """The user's latest request text (the context guard checks what they named)."""
     said_yes: bool = False
     """That request was a yes to a question it had just asked ("Shall I?"): see policy.decide."""
+    paid_up_to: float | None = None
+    """In this request the user said yes to paying up to this amount: later steps of that payment
+    that show no more don't ask again. Starts empty with every request."""
 
 
 @dataclass
@@ -189,6 +192,8 @@ class ToolExecutor:
             remote=perms.remote,
             full_automation=settings.full_automation,
             consented=perms.said_yes and not background,
+            payment_approved=perms.paid_up_to is not None
+            and max(amounts(assessment.summary), default=0.0) <= perms.paid_up_to,
         )
         await self._store.audit(
             "assistant",
@@ -308,6 +313,8 @@ class ToolExecutor:
             return f"the user did not approve ({outcome.reason})"
         if outcome.remember:
             perms.grants.add(call.name)
+        if assessment.risk is RiskLevel.PURCHASE:
+            perms.paid_up_to = max([perms.paid_up_to or 0.0, *amounts(assessment.summary)])
         return None
 
     def _fail(self, call: ToolCallRequested, status: ToolStatus, text: str) -> CallOutcome:

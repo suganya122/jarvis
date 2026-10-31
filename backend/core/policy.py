@@ -57,11 +57,14 @@ def decide(
     remote: str | None = None,
     full_automation: bool = False,
     consented: bool = False,
+    payment_approved: bool = False,
 ) -> Decision:
     """Order matters: deny beats everything, then the non-negotiable approvals.
 
     consented: the user's own words just said yes to a question it asked ("Shall I?"), so the steps
-    that answer it don't ask again (paying and deleting still do)."""
+    that answer it don't ask again (paying and deleting still do).
+    payment_approved: in this request the user already said yes to paying at least this much, so
+    the next steps of that payment ("Proceed to pay", then "Pay now") don't ask again."""
     caps = list(capabilities)
     denied = [c for c in caps if policies.get(c, "ask") == "deny"]
     if denied:
@@ -78,6 +81,8 @@ def decide(
         if remote or not (consented or (full_automation and not tainted)):
             return Decision(action="ask", reason="building an ability writes and runs new code")
         return Decision(action="allow", reason="you asked for it")
+    if risk is RiskLevel.PURCHASE and payment_approved:
+        return Decision(action="allow", reason="you approved this payment")
     if risk.always_requires_approval:
         return Decision(action="ask", reason=f"{risk.value.replace('_', ' ')} actions always need approval")
     if risk is RiskLevel.EXTERNAL_SEND:

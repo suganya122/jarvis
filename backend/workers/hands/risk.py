@@ -11,11 +11,6 @@ _PURCHASE = re.compile(
     r"send money|top up|recharge|transfer money|transfer)\b",
     re.I,
 )
-MONEY = re.compile(
-    r"[₹$€£¥₨]\s*\d|\d\s*[₹$€£¥₨]|\b(?:rs|inr|usd|eur|gbp|aed|sgd)\.?\s*\d|\d[\d,.]*\s*(?:rupees|dollars)\b",
-    re.I,
-)
-"""An amount of money on a button or in what a click is said to do: it pays, whatever it's called."""
 _SEND = re.compile(r"\b(send|post|publish|share|reply|submit|tweet|upload|forward|invite|email)\b", re.I)
 _DESTRUCTIVE = re.compile(
     r"\b(delete|remove|erase|discard|format|wipe|empty|uninstall|reset|overwrite|clear all|destroy|revoke|"

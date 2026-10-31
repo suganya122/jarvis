@@ -363,6 +363,9 @@ def test_the_question_is_a_few_words_not_the_whole_card() -> None:
     )
     question = hands_free_turns.approval_question(_approval("write", f"Build a new ability: {goal}"))
     assert question == "Build a new ability: Voice check for every request. Go ahead?"
+    pay = "Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr (₹77 + delivery and surge) (push button)"
+    question = hands_free_turns.approval_question(_approval("purchase", pay))
+    assert question == "This spends money: Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr. Go ahead?"
 
 
 def test_saying_yes_over_the_question_approves_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:

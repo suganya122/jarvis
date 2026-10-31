@@ -1,5 +1,6 @@
 """Primitives shared by every contract."""
 
+import re
 import uuid
 from enum import StrEnum
 from typing import Final
@@ -28,6 +29,19 @@ class RiskLevel(StrEnum):
         """Deleting and paying always ask, whatever the settings. Sending asks unless the user has
         chosen full automation (tools.full_automation): see core.policy.decide."""
         return self in {RiskLevel.DESTRUCTIVE, RiskLevel.PURCHASE}
+
+
+_NUMBER = r"(\d[\d,]*(?:\.\d+)?)"
+MONEY = re.compile(
+    rf"(?:[₹$€£¥₨]|\b(?:rs|inr|usd|eur|gbp|aed|sgd)\.?)\s*{_NUMBER}|{_NUMBER}\s*(?:[₹$€£¥₨]|(?:rupees|dollars)\b)",
+    re.I,
+)
+"""An amount of money, e.g. '₹1,200', 'Rs. 120', '450 rupees'."""
+
+
+def amounts(text: str) -> list[float]:
+    """Every amount of money in the text: 'Pay ₹134 (₹77 + fees)' -> [134.0, 77.0]."""
+    return [float((m.group(1) or m.group(2)).replace(",", "")) for m in MONEY.finditer(text)]
 
 
 class Capability(StrEnum):

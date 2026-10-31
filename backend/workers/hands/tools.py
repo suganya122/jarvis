@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
-from contracts.common import Capability, RiskLevel, Trust
+from contracts.common import MONEY, Capability, RiskLevel, Trust
 from contracts.hands import ActionResult, ElementInfo
 from contracts.tools import ToolAssessment, ToolResult
 from workers.common import clipboard
@@ -24,7 +24,7 @@ from workers.hands.locate import (
     element_meta,
     window_meta,
 )
-from workers.hands.risk import MONEY, key_risk, label_risk, runs_commands
+from workers.hands.risk import key_risk, label_risk, runs_commands
 
 WORKER_NAME = "hands"
 
@@ -143,12 +143,11 @@ class ClickElement(WorkerTool[ClickArgs]):
     def assess(self, args: ClickArgs, env: HandsEnv) -> ToolAssessment:
         real, label = env.element(args.element_id)[:2]
         info = env.hands.describe(real)
-        about = f": {args.about.strip()}" if args.about.strip() else ""
-        shown = " ".join((info.name, info.text or "", args.about))
-        risk = (
-            RiskLevel.PURCHASE if MONEY.search(shown) else label_risk(info.name, info.text or "", args.about)
-        )
-        return ToolAssessment(risk=risk, summary=f"Click {label}{about}")
+        about = args.about.strip()
+        # A price on a control is shopping (a product, the cart and its total). Its words ("Pay now"),
+        # or the click described as paying an amount, make it a payment.
+        risk = RiskLevel.PURCHASE if MONEY.search(about) else label_risk(info.name, info.text or "", about)
+        return ToolAssessment(risk=risk, summary=f"{about} ({label})" if about else f"Click {label}")
 
     async def run(self, args: ClickArgs, env: HandsEnv) -> ToolResult:
         real, label, short = env.element(args.element_id)
