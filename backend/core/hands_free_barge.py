@@ -34,12 +34,14 @@ class BargeIn:
         wake_word: str,
         paused: Callable[[], bool],
         on_cut_in: Callable[[], None],
+        working: Callable[[], bool] = lambda: False,
     ) -> None:
         self._rec = recognizer
         self._saying = saying
         self._wake_word = wake_word
         self._paused = paused
         self._on_cut_in = on_cut_in
+        self._working = working  # a step it was asked for is running: only "stop", "wait"... end it
         self._queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         self.stream = ""
         self.frames: deque[str] = deque(maxlen=LEAD_IN_FRAMES)
@@ -76,7 +78,7 @@ class BargeIn:
                 if data.error:
                     log.warning("cut-in listener: the speech engine stopped (%s)", data.error)
                     return  # the main loop reports it
-                elif is_barge_in(data.text, self._saying(), self._wake_word):
+                elif is_barge_in(data.text, self._saying(), self._wake_word, stop_only=self._working()):
                     self.cut_in = True
                     self._on_cut_in()
                     return

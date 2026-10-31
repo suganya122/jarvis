@@ -51,5 +51,6 @@ def make_tools() -> dict[str, FakeTool]:
         FakeTool("note", RiskLevel.WRITE, (Capability.FS_WRITE,)),
         FakeTool("wipe", RiskLevel.DESTRUCTIVE, (Capability.FS_WRITE,)),
         FakeTool("buy", RiskLevel.PURCHASE, (Capability.PURCHASE,)),
+        FakeTool("keep", RiskLevel.WRITE, (Capability.MEMORY,)),
     ]
     return {t.info.name: t for t in tools}

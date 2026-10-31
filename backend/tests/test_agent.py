@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from contracts.common import Capability
 from core.config import Settings
 from models.fake import FakeProvider, FakeStep
 from tests.conftest import Harness, handshake, make_harness
@@ -90,6 +91,32 @@ def test_write_asks_and_runs_after_approval(make: Make) -> None:
     assert of(events, "approval.resolved")[0]["approved"]
     assert tools["note"].runs == [{"value": "x"}]
     assert last_results(provider)[0]["output"] == "done"
+
+
+def test_after_reading_a_page_steps_just_run_and_a_yes_to_its_question_is_the_approval(make: Make) -> None:
+    """Checking flight times read a page, and then every step asked "yes or no". Now ordinary steps
+    just run; what lasts (a memory) asks, but not when it answers the user's yes to its question."""
+    script = [
+        FakeStep(tool_calls=[("peek", {})]),
+        FakeStep(tool_calls=[("note", {"value": "flights"})]),
+        FakeStep(tool_calls=[("keep", {"value": "6pm"})]),
+        FakeStep(text="Your flight leaves at 6 pm. Shall I remind you at 4?"),
+        FakeStep(tool_calls=[("keep", {"value": "remind at 4"})]),
+        FakeStep(text="Done."),
+    ]
+    automation = Settings.model_validate(
+        {"tools": {"full_automation": True, "policies": {c.value: "allow" for c in Capability}}}
+    )
+    harness, tools, _ = make(script, settings=automation)
+    asked: list[str] = []
+    with harness.ws() as ws:
+        handshake(ws)
+        first = turn(ws, "check my flight times", approve=lambda e: (not asked.append(e["summary"]), False))
+        session = of(first, "chat.started")[0]["session_id"]
+        turn(ws, "yes please", session_id=session, request_id="r2")  # no approval card at all
+    assert asked == ["keep 6pm"]
+    assert tools["note"].runs == [{"value": "flights"}]
+    assert tools["keep"].runs == [{"value": "6pm"}, {"value": "remind at 4"}]
 
 
 def test_denied_call_does_not_run_and_model_is_told(make: Make) -> None:

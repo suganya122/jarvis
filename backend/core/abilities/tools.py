@@ -75,7 +75,7 @@ class BuildAbility:
             "capable model writes a small program for it, which is installed and tested on this "
             "computer and then becomes a tool you can use from now on. It can also change how you "
             "hear: an ability that listens is asked about every request before you act on it (e.g. "
-            "only the user's own voice). The user is always asked first."
+            "only the user's own voice). Offer it first; the user's yes starts it."
         ),
         input_schema=BuildArgs.model_json_schema(),
         risk=RiskLevel.WRITE,
@@ -94,10 +94,7 @@ class BuildAbility:
         a = _parse(BuildArgs, args)
         if isinstance(a, str):
             return ToolAssessment(risk=RiskLevel.WRITE, summary="Build a new ability", error=a)
-        return ToolAssessment(
-            risk=RiskLevel.WRITE,
-            summary=f"Build myself a new ability (write and run new code on this computer): {a.goal}",
-        )
+        return ToolAssessment(risk=RiskLevel.WRITE, summary=f"Build a new ability: {a.goal}")
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         a = _parse(BuildArgs, args)

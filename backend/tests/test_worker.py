@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from contracts.common import RiskLevel, Trust
+from contracts.common import Capability, RiskLevel, Trust
 from contracts.worker import WorkerConfig
 from core.worker_host import WorkerHost, worker_env
 from workers.os_tools.paths import PathDenied, PathGuard
@@ -114,6 +114,16 @@ async def test_write_create_then_overwrite_is_destructive(host: WorkerHost, root
     assert replace.risk is RiskLevel.DESTRUCTIVE and not replace.error
     assert (await host.invoke("write_text_file", {"path": target, "content": "v2", "overwrite": True})).ok
     assert await asyncio.to_thread(Path(target).read_text) == "v2"
+
+
+async def test_a_file_that_starts_by_itself_later_counts_as_a_routine(host: WorkerHost, root: Path) -> None:
+    agents = root / "allowed" / "LaunchAgents"
+    await asyncio.to_thread(agents.mkdir)
+    later = await host.assess("write_text_file", {"path": str(agents / "x.plist"), "content": "<plist/>"})
+    assert later.capabilities == (Capability.SCHEDULE,) and not later.error
+    note = str(root / "allowed" / "docs" / "n.txt")
+    plain = await host.assess("write_text_file", {"path": note, "content": "x"})
+    assert plain.capabilities == ()
 
 
 async def test_invalid_args_are_rejected(host: WorkerHost) -> None:

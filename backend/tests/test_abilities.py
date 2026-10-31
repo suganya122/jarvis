@@ -167,17 +167,28 @@ def test_it_gives_up_honestly(tmp_path: Path) -> None:
 # ---- asking -------------------------------------------------------------------------------
 
 
-def test_building_always_asks_and_never_happens_in_the_background() -> None:
+def test_it_is_built_when_asked_but_never_in_the_background() -> None:
+    """ "Can I build myself a way? Shall I?" "Yes." — and the approval card used to ask again."""
     allow_all = dict.fromkeys(Capability, "allow")
     common: dict[str, Any] = {
         "risk": RiskLevel.WRITE, "capabilities": [Capability.SHELL_RUN], "policies": allow_all,
-        "tainted": False, "session_grants": {"build_ability"},
+        "tainted": False, "session_grants": set(),
     }  # fmt: skip
-    assert decide(tool="build_ability", full_automation=True, direct=True, **common).action == "ask"
-    assert decide(tool="build_ability", background=True, **common).action == "deny"
+    tainted = {**common, "tainted": True}
+
+    def build(**kw: Any) -> str:
+        return decide(tool="build_ability", **{**common, **kw}).action
+
+    assert build(full_automation=True) == "allow"  # they asked for it
+    assert build(full_automation=True, tainted=True) == "ask"  # after a web page: only their yes
+    assert build(full_automation=True, tainted=True, consented=True) == "allow"
+    assert build(consented=True) == "allow"  # their yes, even with full automation off
+    assert build() == "ask"
+    assert build(full_automation=True, consented=True, remote="telegram") == "ask"
+    assert build(full_automation=True, consented=True, background=True) == "deny"
     assert decide(tool="ability_greet", full_automation=True, **common).action == "allow"
-    tainted = {**common, "tainted": True, "session_grants": set()}
-    assert decide(tool="ability_greet", full_automation=True, **tainted).action == "ask"
+    sends = {**tainted, "risk": RiskLevel.EXTERNAL_SEND}  # an ability that sends, after a web page
+    assert decide(tool="ability_greet", full_automation=True, **sends).action == "ask"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS's sandbox")

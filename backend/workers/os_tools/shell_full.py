@@ -6,7 +6,8 @@ scripts, any folder. What keeps it the user's assistant and not a loose cannon:
 - a command that deletes, overwrites a disk, kills processes, powers off, uses sudo, pipes a download
   into a shell, or touches secrets or Jarvis's own data is DESTRUCTIVE: it always asks, whatever else
   is allowed (the policy gate, not this file, enforces that);
-- after reading outside content (a page, a file) every command asks, like any command;
+- with full automation, after reading outside content (a page, a file) only commands that send data
+  off the computer or set something to start by itself ask (core.policy); without it, every one does;
 - what a command prints is outside content: data, never instructions.
 """
 
@@ -21,7 +22,7 @@ from pydantic import Field
 
 from contracts.common import Capability, RiskLevel, Trust
 from contracts.tools import ToolAssessment, ToolResult
-from workers.os_tools.base import Args, Env, WorkerTool, truncate
+from workers.os_tools.base import STARTS_BY_ITSELF, Args, Env, WorkerTool, truncate
 from workers.os_tools.shell_tool import SAFE_ENV_KEYS, _kill, _read_capped
 
 MAX_TIMEOUT_S = 600
@@ -43,7 +44,10 @@ DESTRUCTIVE = (
     (r"\bfind\b[^|;&]*\s-delete\b", "deletes files"),
     (r"\bgit\s+(?:clean\b|reset\s+--hard|push\b[^|;&]*(?:--force|\s-f\b))", "discards work in git"),
     (r"(?:^|[;&|(\s`])truncate\b", "empties a file"),
-    (r"\b(?:curl|wget)\b[^;&]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b", "runs a download without looking at it"),
+    (
+        r"\b(?:curl|wget)\b[^;&]*\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|python3?|node|ruby|perl|osascript)\b",
+        "runs a download without looking at it",
+    ),
     (r"\bsecurity\s+(?:find|dump|export|delete)-", "reads the keychain"),
     (r"\blaunchctl\s+(?:remove|unload|bootout|disable)\b", "removes a background service"),
 )
@@ -51,6 +55,19 @@ DESTRUCTIVE = (
 SECRET_WORDS = re.compile(r"(?:^|[/\s=\"'])\.env\b|id_rsa|id_ed25519|\.pem\b|keychain", re.I)
 OVERWRITE = re.compile(r"(?<![>\d&])>(?!>)\s*(?!&|/dev/null)\S")
 """A single `>` replaces a file's contents."""
+SENDS_OUT = re.compile(
+    "|".join(
+        (
+            r"\bcurl\b[^;&|]*\s-[A-Za-z]*[dFT](?=[\s=@'\"]|$)",  # -d data, -F form, -T upload
+            r"\bcurl\b[^;&|]*\s-X\s*(?:POST|PUT|PATCH)\b",
+            r"\b(?:curl|wget)\b[^;&|]*\s--(?:data\S*|form\S*|upload-file|json|post-\w+|body-\w+)(?=[\s=@'\"]|$)",
+            r"\b(?:curl|wget)\b[^;&|]*(?:\$\(|`)",  # a command's output put in the address
+            r"(?:^|[;&|(\s`])(?:scp|sftp|ftp|ssh|nc|ncat|netcat|socat|mail|sendmail|mutt)(?=\s|$)",
+            r"\brsync\b[^;&|]*\s[\w.@-]+:",  # to another machine
+        )
+    )
+)
+"""The usual ways a command uploads or sends data: after reading outside content, these ask."""
 
 
 class ShellArgs(Args):
@@ -110,8 +127,12 @@ class RunShell(WorkerTool[ShellArgs]):
             )
         why = danger(args.command, env)
         if why:
-            return ToolAssessment(risk=RiskLevel.DESTRUCTIVE, summary=f"Run `{shown}` ({why})")
-        return ToolAssessment(risk=self.risk, summary=f"Run `{shown}`")
+            return ToolAssessment(risk=RiskLevel.DESTRUCTIVE, summary=f"{why[0].upper()}{why[1:]}: `{shown}`")
+        later = (Capability.SCHEDULE,) if STARTS_BY_ITSELF.search(args.command) else ()
+        if SENDS_OUT.search(args.command):
+            summary = f"Send from this computer: `{shown}`"
+            return ToolAssessment(risk=RiskLevel.EXTERNAL_SEND, summary=summary, capabilities=later)
+        return ToolAssessment(risk=self.risk, summary=f"Run `{shown}`", capabilities=later)
 
     async def run(self, args: ShellArgs, env: Env) -> ToolResult:
         if not env.config.full_control:

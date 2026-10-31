@@ -41,6 +41,8 @@ class ChatPermissions:
     """What the user was looking at (voice hotkey), pinned to this chat until redirected."""
     request: str = ""
     """The user's latest request text (the context guard checks what they named)."""
+    said_yes: bool = False
+    """That request was a yes to a question it had just asked ("Shall I?"): see policy.decide."""
 
 
 @dataclass
@@ -186,6 +188,7 @@ class ToolExecutor:
             background=background,
             remote=perms.remote,
             full_automation=settings.full_automation,
+            consented=perms.said_yes and not background,
         )
         await self._store.audit(
             "assistant",

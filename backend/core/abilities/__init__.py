@@ -6,8 +6,9 @@
     host     the small program that process runs
     tools    build_ability, list_abilities, remove_ability, and one tool per ability
 
-Building always asks the user (core.policy.ALWAYS_ASKS), even with full automation: it writes and
-runs new code. Using an ability then follows the usual rules for what it declared it does.
+Building writes and runs new code, so it happens only when the user asks for it or says yes to the
+offer, never from a routine (core.policy.NEW_CODE). Using an ability then follows the usual rules
+for what it declared it does.
 An ability can also listen ("hears"): it's asked about every request Jarvis hears before Jarvis
 acts on it, which is how Jarvis can teach itself, say, to answer only the user's own voice.
 """

@@ -39,6 +39,7 @@ from core.router.rules import match as match_rule
 from core.skill_runner import SkillRunner
 from core.speculation import Speculation
 from core.speculation import start as start_speculation
+from core.speech_text import is_yes_to
 from core.store import Store
 from core.tool_exec import ChatPermissions, ToolExecutor
 from core.toolbox import ToolRegistry
@@ -166,6 +167,8 @@ class ChatService(RoutesMixin):
                 perms.tainted = True  # text from another app is outside content
         cleaned = clean(send.text)
         history = await self._store.history(session_id)
+        last_said = next((m.text for m in reversed(history) if m.role is Role.ASSISTANT and m.text), "")
+        perms.said_yes = is_yes_to(last_said, send.text)
         await emit(
             ChatStarted(
                 request_id=send.request_id,

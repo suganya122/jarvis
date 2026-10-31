@@ -12,7 +12,7 @@ from pydantic import Field
 
 from contracts.common import Capability, RiskLevel, Trust
 from contracts.tools import ToolAssessment, ToolResult
-from workers.os_tools.base import Args, Env, WorkerTool, human_size, truncate
+from workers.os_tools.base import STARTS_BY_ITSELF, Args, Env, WorkerTool, human_size, truncate
 from workers.os_tools.paths import PathDenied
 
 MAX_READ_BYTES = 5 * 1024 * 1024
@@ -154,7 +154,9 @@ class WriteTextFile(WorkerTool[WriteArgs]):
             return ToolAssessment(
                 risk=RiskLevel.DESTRUCTIVE, summary=f"Overwrite {shown} ({old} → {new_size})"
             )
-        return ToolAssessment(risk=RiskLevel.WRITE, summary=f"Create {shown} ({new_size})")
+        later = (Capability.SCHEDULE,) if STARTS_BY_ITSELF.search(str(path)) else ()
+        summary = f"Create {shown} ({new_size})"
+        return ToolAssessment(risk=RiskLevel.WRITE, summary=summary, capabilities=later)
 
     async def run(self, args: WriteArgs, env: Env) -> ToolResult:
         path = env.paths.resolve(args.path)

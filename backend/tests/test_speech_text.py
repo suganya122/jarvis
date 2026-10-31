@@ -9,6 +9,7 @@ from core.speech_text import (
     is_barge_in,
     is_end_phrase,
     is_hold,
+    is_yes_to,
     match_wake,
     speakable,
     without_echo,
@@ -301,3 +302,26 @@ def test_a_recogniser_that_starts_over_after_a_pause_keeps_what_was_said_before_
     other = Transcript()
     other.update("open the calendar please")
     assert other.update("open the calendar") == "open the calendar"
+
+
+@pytest.mark.parametrize(
+    ("question", "answer", "yes"),
+    [
+        ("I can build myself a way to do that. Shall I?", "yes", True),
+        ("Shall I try again?", "but I have approved you already", True),
+        ("Want me to try it with an open-source model?", "sure go ahead", True),
+        ("Shall I?", "yes but don't use opus", False),  # a "don't": the card asks instead
+        ("Shall I?", "no", False),
+        ("Done. Your flight is at 6.", "okay please check the hotel too", False),  # nothing was asked
+        ("Shall I?", "okay so please also check the hotel and the car and the train times for me", False),
+    ],
+)
+def test_a_yes_counts_only_as_the_answer_to_its_question(question: str, answer: str, yes: bool) -> None:
+    assert is_yes_to(question, answer) is yes
+
+
+def test_while_it_works_only_stop_words_cut_in() -> None:
+    saying = "Building it now, it takes a minute or two."
+    assert is_barge_in("are you building it yet jarvis", saying, "jarvis")
+    assert not is_barge_in("are you building it yet jarvis", saying, "jarvis", stop_only=True)
+    assert is_barge_in("no stop", saying, "jarvis", stop_only=True)

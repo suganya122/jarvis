@@ -11,7 +11,16 @@ import pytest
 import core.hands_free as hands_free
 import core.hands_free_turns as hands_free_turns
 from contracts.voice import TranscriptEvent
-from contracts.ws import ApprovalRequested, ApprovalResolved, ChatDelta, ChatDone, ServerMessage, Usage
+from contracts.ws import (
+    ApprovalRequested,
+    ApprovalResolved,
+    ChatDelta,
+    ChatDone,
+    ServerMessage,
+    ToolFinished,
+    ToolStarted,
+    Usage,
+)
 from core.config import VoiceSettings
 from core.hands_free import HandsFree
 from core.hands_free_types import HandsFreeDeps
@@ -261,9 +270,9 @@ def test_thanks_ends_the_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
     asyncio.run(run())
 
 
-def _approval(risk: str, untrusted: bool = False) -> ApprovalRequested:
+def _approval(risk: str, summary: str = "Create notes.txt") -> ApprovalRequested:
     return ApprovalRequested(approval_id="a1", request_id="r", call_id="c", tool="write_text_file", risk=risk,  # type: ignore[arg-type]
-                             summary="Create notes.txt", reason="asks", args={}, untrusted_context=untrusted,
+                             summary=summary, reason="asks", args={}, untrusted_context=True,
                              can_remember=False, expires_in_s=60)  # fmt: skip
 
 
@@ -280,7 +289,7 @@ def test_an_ordinary_change_is_approved_by_saying_yes(monkeypatch: pytest.Monkey
         rig.turn_script = script
         async with rig.running():
             await rig.speak("jarvis make a notes file")
-            await rig.until(lambda: any("Say yes or no" in t for t in rig.ears.said))
+            await rig.until(lambda: "Create notes.txt. Go ahead?" in rig.ears.said)
             rig.rec.text = ""
             await asyncio.sleep(0.1)
             await rig.speak("yes please")
@@ -290,10 +299,14 @@ def test_an_ordinary_change_is_approved_by_saying_yes(monkeypatch: pytest.Monkey
     asyncio.run(run())
 
 
-def test_a_muddled_or_missing_answer_never_approves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_a_clear_answer_counts_and_silence_keeps_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Silence used to count as a no ("I'll leave that for now"), so a tap on the card a moment
+    later found nothing to approve. Now silence waits (the card stays up until the approval times
+    out), something unclear gets one "Yes or no?", and a muddled answer is a no, never a yes."""
+
     async def run() -> None:
         rig = Rig(monkeypatch)
-        monkeypatch.setattr(hands_free_turns, "APPROVAL_LISTEN_S", 0.3)
+        monkeypatch.setattr(hands_free_turns, "APPROVAL_LISTEN_S", 0.2)
 
         async def script(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
             await emit(_approval("destructive"))
@@ -302,7 +315,12 @@ def test_a_muddled_or_missing_answer_never_approves(monkeypatch: pytest.MonkeyPa
         rig.turn_script = script
         async with rig.running():
             await rig.speak("jarvis delete the old notes")
-            await rig.until(lambda: any("Say yes or no" in t for t in rig.ears.said))
+            await rig.until(lambda: any("Go ahead?" in t for t in rig.ears.said))
+            rig.rec.text = ""
+            await asyncio.sleep(0.8)  # several listening rounds with nothing said
+            assert rig.resolved == [] and rig.hf.state == "approval"
+            await rig.speak("hmm let me think")
+            await rig.until(lambda: rig.ears.said[-1] == "Yes or no?")
             rig.rec.text = ""
             await asyncio.sleep(0.1)
             await rig.speak("yeah no")
@@ -312,33 +330,96 @@ def test_a_muddled_or_missing_answer_never_approves(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize(
-    ("risk", "untrusted", "said"),
-    [
-        ("external_send", False, "This will send something"),
-        ("purchase", False, "This will spend money"),
-        ("write", True, "outside content"),
-    ],
+    ("risk", "said"), [("external_send", "This sends something"), ("purchase", "This spends money")]
 )
-def test_serious_steps_are_spelled_out_then_a_spoken_yes_approves(
-    monkeypatch: pytest.MonkeyPatch, risk: str, untrusted: bool, said: str
+def test_serious_steps_say_what_kind_they_are_then_a_spoken_yes_approves(
+    monkeypatch: pytest.MonkeyPatch, risk: str, said: str
 ) -> None:
     """The user's choice: a spoken yes or the button approves anything, sends and purchases too.
-    So what kind of step it is, and where it came from, is said before the yes counts."""
+    So what kind of step it is is said before the yes counts."""
 
     async def run() -> None:
         rig = Rig(monkeypatch)
 
         async def script(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
-            await emit(_approval(risk, untrusted))
+            await emit(_approval(risk))
             await asyncio.sleep(1.5)
 
         rig.turn_script = script
         async with rig.running():
             await rig.speak("jarvis email the plan")
-            await rig.until(lambda: any(said in t and "yes or no" in t for t in rig.ears.said))
+            await rig.until(lambda: f"{said}: Create notes.txt. Go ahead?" in rig.ears.said)
             rig.rec.text = ""
             await rig.speak("yes")
             await rig.until(lambda: rig.resolved == [("a1", True)])
+
+    asyncio.run(run())
+
+
+def test_the_question_is_a_few_words_not_the_whole_card() -> None:
+    goal = (
+        "Voice check for every request: verify the speaker is the user (srinivasan). If there is "
+        "anyone else talking, ignore them and say nothing"
+    )
+    question = hands_free_turns.approval_question(_approval("write", f"Build a new ability: {goal}"))
+    assert question == "Build a new ability: Voice check for every request. Go ahead?"
+
+
+def test_saying_yes_over_the_question_approves_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What happened: while it was still asking, "yes, go ahead, build it" was taken for talking
+    over it, which cancelled the whole request, so it said "the approval was cancelled"."""
+
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+
+        async def script(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
+            await emit(_approval("write", "Build a new ability: Voice check for every request"))
+            await rig.until(lambda: bool(rig.resolved), timeout=6)
+            await emit(ApprovalResolved(approval_id="a1", approved=True, reason="approved by you"))
+            await emit(ChatDelta(request_id="r", text="Built it."))
+
+        rig.turn_script = script
+        async with rig.running():
+            rig.ears.speak_s = 0.8
+            await rig.speak("jarvis build yourself a voice check")
+            await rig.until(lambda: any("Go ahead?" in t for t in rig.ears.said))
+            await rig.speak("yes please do that right now")  # over the question, still being said
+            await rig.until(lambda: rig.resolved == [("a1", True)])
+            await rig.until(lambda: "Built it." in rig.ears.said)
+            assert rig.ears.stopped == 0 and len(rig.turns) == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(("heard", "stops"), [("are you building it yet", False), ("stop", True)])
+def test_while_a_step_runs_only_stop_words_cut_it_off(
+    monkeypatch: pytest.MonkeyPatch, heard: str, stops: bool
+) -> None:
+    """A build takes a minute or two: "are you building it?" mustn't throw it away. "Stop" does."""
+
+    async def run() -> None:
+        rig = Rig(monkeypatch, live=True)
+
+        async def script(emit: Callable[[ServerMessage], Awaitable[None]]) -> None:
+            started = ToolStarted(request_id="r", call_id="c1", tool="build", summary="B", risk="write")
+            await emit(started)
+            await asyncio.sleep(1.0)
+            await emit(ToolFinished(request_id="r", call_id="c1", status="ok", preview="", duration_ms=1))
+            await emit(ChatDelta(request_id="r", text="Built it."))
+
+        rig.turn_script = script
+        async with rig.running():
+            await rig.speak("jarvis build yourself a voice check")
+            await rig.until(lambda: rig.hf.state == "thinking")
+            await asyncio.sleep(0.2)
+            await rig.speak(heard)
+            if stops:
+                await rig.until(lambda: rig.ears.stopped >= 1)
+                await asyncio.sleep(1.2)
+                assert "Built it." not in rig.ears.said
+            else:
+                await rig.until(lambda: "Built it." in rig.ears.said)
+                assert rig.ears.stopped == 0
 
     asyncio.run(run())
 

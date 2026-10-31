@@ -13,6 +13,8 @@ from contracts.ws import (
     ChatDone,
     ChatError,
     ServerMessage,
+    ToolFinished,
+    ToolStarted,
 )
 from core.hands_free_barge import BargeIn
 from core.hands_free_types import (
@@ -59,6 +61,10 @@ class TurnsMixin:
     """When the person's words last came in: they're talking to it, so it's not free."""
     _carry: str = ""
     """The words of a request that was cut off before it answered: the start of the next one."""
+    _asking: int = 0
+    """Approvals being asked aloud: what's heard then is the answer, never a cut-in."""
+    _tools_running: frozenset[str] = frozenset()
+    """The steps of this request that are running (see BargeIn's `working`)."""
     _lead_in: list[str]
     _echo_of: str
     _said_at: float
@@ -67,6 +73,9 @@ class TurnsMixin:
         raise NotImplementedError
 
     def _wake_word(self) -> str:
+        raise NotImplementedError
+
+    def _blocker(self) -> str | None:
         raise NotImplementedError
 
     async def _hear(self, *, wake: bool, first_word_s: float | None, silence_s: float) -> str | None:
@@ -172,8 +181,9 @@ class TurnsMixin:
             self._d.recognizer,
             saying=lambda: self._saying,
             wake_word=self._wake_word(),
-            paused=lambda: self.state == "approval",
+            paused=lambda: self._asking > 0,
             on_cut_in=self.interrupt,
+            working=lambda: bool(self._tools_running),
         )
         if not await self._for_us(text):
             return None
@@ -265,6 +275,10 @@ class TurnsMixin:
                 task = approvals.pop(msg.approval_id, None)
                 if task is not None and task is not asyncio.current_task():
                     task.cancel()
+            elif isinstance(msg, ToolStarted):
+                self._tools_running = self._tools_running | {msg.call_id}
+            elif isinstance(msg, ToolFinished):
+                self._tools_running = self._tools_running - {msg.call_id}
             elif isinstance(msg, ChatDone):
                 outcome["done"] = "1"
 
@@ -285,7 +299,7 @@ class TurnsMixin:
             log.exception("voice request failed")
             return "Sorry, something went wrong."
         finally:
-            self._turn_task = None
+            self._turn_task, self._tools_running = None, frozenset()
             for task in approvals.values():
                 task.cancel()
         if "cancelled" in outcome:
@@ -300,11 +314,15 @@ class TurnsMixin:
         return None if spoken["any"] else "Done."
 
     async def _ask_approval(self, msg: ApprovalRequested) -> None:
-        """Asked aloud; a spoken yes/no or the overlay card's buttons answer it, whichever is first."""
-        self.state = "approval"
+        """Asked aloud in a few words; a spoken yes/no or the overlay card's buttons answer it,
+        whichever is first. Nothing said meanwhile cuts the request off (a "yes" over the question
+        used to cancel it). Only a clear yes approves and a clear no refuses: silence keeps waiting,
+        the card stays up until the approval times out, so a missed word never loses the request."""
+        self.state, self._asking = "approval", self._asking + 1
         try:
             await self._say(approval_question(msg))
-            for attempt in range(2):
+            asked_again = False
+            while self._blocker() is None and not self._offline:
                 heard = await self._hear(
                     wake=False, first_word_s=APPROVAL_LISTEN_S, silence_s=APPROVAL_SILENCE_S
                 )
@@ -312,31 +330,33 @@ class TurnsMixin:
                 if verdict is not None:
                     self._d.resolve_approval(msg.approval_id, verdict)
                     return
-                if attempt == 0 and heard:
-                    await self._say("Sorry, yes or no?")
-            self._d.resolve_approval(msg.approval_id, False)  # no clear answer: not approved
-            await self._say("I'll leave that for now.")
+                if heard and not asked_again:
+                    asked_again = True
+                    await self._say("Yes or no?")
         finally:
+            self._asking -= 1
             self.state = "thinking"  # back to the request: talking over it works again
 
 
-SERIOUS = {
-    "external_send": "This will send something",
-    "purchase": "This will spend money",
-    "destructive": "This can't be undone",
-}
+SPOKEN_ASK_CHARS = 80
+SERIOUS = {"external_send": "This sends something", "purchase": "This spends money"}
 
 
 def approval_question(msg: ApprovalRequested) -> str:
-    """What's about to happen, said in full before a yes counts: the kind of step when it matters,
-    and whether outside content (a page, an email, a file) shaped it."""
-    summary = msg.summary.split("\n", 1)[0][:240].rstrip(".")
-    parts = []
-    if msg.untrusted_context:
-        parts.append("Heads up, this comes after reading outside content.")
-    if kind := SERIOUS.get(str(msg.risk)):
-        parts.append(f"{kind}: {summary}.")
-        parts.append("Should I go ahead? Say yes or no.")
-    else:
-        parts.append(f"{summary}. Say yes or no.")
-    return " ".join(parts)
+    """A few words, quick to hear and answer: what's about to happen (the card shows the rest),
+    and the kind of step when it matters."""
+    what = brief(msg.summary)
+    kind = SERIOUS.get(str(msg.risk))
+    return f"{kind}: {what}. Go ahead?" if kind else f"{what}. Go ahead?"
+
+
+def brief(summary: str, limit: int = SPOKEN_ASK_CHARS) -> str:
+    """The summary's first line, ended at a clause when it's long."""
+    text = summary.split("\n", 1)[0].strip().rstrip(".")
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for mark in (". ", ": ", "; ", ", "):
+        if (end := cut.rfind(mark)) >= limit // 3:
+            return cut[:end]
+    return cut.rsplit(" ", 1)[0]

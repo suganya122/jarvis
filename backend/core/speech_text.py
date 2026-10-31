@@ -123,6 +123,16 @@ def yes_no(text: str) -> bool | None:
     return None
 
 
+YES_MAX_WORDS = 12
+"""A yes is short ("sure, try that", "I approved it already"): longer is a new request."""
+
+
+def is_yes_to(question: str, answer: str) -> bool:
+    """Is `answer` a yes to `question`, the last thing it said, if that asked something?"""
+    asked = question.rstrip(" \n\"'”*)").endswith("?")
+    return asked and len(words(answer)) <= YES_MAX_WORDS and yes_no(answer) is True
+
+
 _FENCE = re.compile(r"```.*?```", re.DOTALL)
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _URL = re.compile(r"https?://\S+")
@@ -280,11 +290,17 @@ def their_words(heard: str, saying: str) -> list[str]:
     return theirs
 
 
-def is_barge_in(heard: str, saying: str, wake_word: str) -> bool:
+def is_barge_in(heard: str, saying: str, wake_word: str, stop_only: bool = False) -> bool:
     """Is someone talking over the reply? A cut-in word ("wait") or the name it didn't say itself,
-    or three words of their own; its own voice coming back, however misheard, doesn't count."""
+    or three words of their own; its own voice coming back, however misheard, doesn't count.
+    stop_only: it's doing what they asked (building, running a command), and only a cut-in word
+    stops that: "are you done yet?" or talk in the room mustn't throw the work away."""
     theirs = their_words(heard, saying)
-    if any(w in CUT_IN_WORDS or w == wake_word for w in theirs):
+    if any(w in CUT_IN_WORDS for w in theirs):
+        return True
+    if stop_only:
+        return False
+    if wake_word in theirs:
         return True
     return len([w for w in theirs if len(w) > 2 and w not in FILLERS]) >= 3
 

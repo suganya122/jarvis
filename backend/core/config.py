@@ -105,7 +105,8 @@ class ToolSettings(BaseModel):
     full_control: bool = True
     """run_shell: any command (pipes, Homebrew, git, scripts) anywhere on the computer, the way the user
     would in Terminal. Deleting, killing processes, touching secrets or Jarvis's own data, and sudo still
-    ask first, and after reading outside content every command asks. Off: only the short allowlist."""
+    ask first; after reading outside content, so do commands that send data out or start by themselves.
+    Off: only the short allowlist."""
 
     allowed_roots: list[str] = Field(default_factory=lambda: ["~"])
     denied_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_DENIED_PATHS))

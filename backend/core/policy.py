@@ -13,8 +13,10 @@ FOCUS_STEALING_TOOLS = frozenset(
     {"focus_window", "press_keys", "paste_text", "scroll", "open_app", "open_url", "open_path", "insert_text",
      "setup_permission", "browser_handover", "browser_finish"}  # the last two show the browser window
 )  # fmt: skip
-ALWAYS_ASKS = frozenset({"build_ability"})
-"""Asks every time, whatever the settings (even full automation, even a typed command)."""
+NEW_CODE = frozenset({"build_ability"})
+"""Writes and runs new code: never from a background routine, and from a chat app it asks. At the
+computer it's built when the user asks for it (full automation) or says yes to the offer; after
+reading outside content only their own yes builds it."""
 
 
 REACHES_THE_COMPUTER = frozenset(
@@ -29,9 +31,10 @@ REACHES_THE_COMPUTER = frozenset(
 """After reading outside content (a page, a file, command output), steps with these still ask: a
 planted instruction could otherwise run commands, change files, type into the user's apps, or
 leave something behind that acts later. Clicking around in its own browser doesn't ask."""
-LOOSE_REACH = frozenset({Capability.SHELL_RUN, Capability.FS_WRITE, Capability.MEMORY, Capability.SCHEDULE})
-"""With full automation, after reading outside content only commands, file changes and what persists
-or acts later (memory, routines) still ask: those are what a planted instruction goes for."""
+LASTING = frozenset({Capability.MEMORY, Capability.SCHEDULE})
+"""With full automation, after reading outside content only what lasts or acts later (a memory, a
+routine, something set to start by itself) and commands that send data off the computer still ask:
+those are what a planted instruction goes for. Everything else the user asked for just runs."""
 
 
 class Decision(BaseModel):
@@ -53,8 +56,12 @@ def decide(
     background: bool = False,
     remote: str | None = None,
     full_automation: bool = False,
+    consented: bool = False,
 ) -> Decision:
-    """Order matters: deny beats everything, then the non-negotiable approvals."""
+    """Order matters: deny beats everything, then the non-negotiable approvals.
+
+    consented: the user's own words just said yes to a question it asked ("Shall I?"), so the steps
+    that answer it don't ask again (paying and deleting still do)."""
     caps = list(capabilities)
     denied = [c for c in caps if policies.get(c, "ask") == "deny"]
     if denied:
@@ -63,14 +70,14 @@ def decide(
         return Decision(
             action="deny", reason="it would take over your screen, which background tasks never do"
         )
-    if tool in ALWAYS_ASKS:
+    if tool in NEW_CODE:
         if background:
             return Decision(
                 action="deny", reason="new abilities are only built when you ask, at the computer"
             )
-        return Decision(
-            action="ask", reason="building an ability writes and runs new code, so it always asks"
-        )
+        if remote or not (consented or (full_automation and not tainted)):
+            return Decision(action="ask", reason="building an ability writes and runs new code")
+        return Decision(action="allow", reason="you asked for it")
     if risk.always_requires_approval:
         return Decision(action="ask", reason=f"{risk.value.replace('_', ' ')} actions always need approval")
     if risk is RiskLevel.EXTERNAL_SEND:
@@ -87,8 +94,12 @@ def decide(
     if direct:
         # The user typed this exact command; nothing the model read can have caused it.
         return Decision(action="allow", reason="you asked for this directly")
-    reach = LOOSE_REACH if full_automation else REACHES_THE_COMPUTER
-    if tainted and risk is not RiskLevel.READ and set(caps) & reach:
+    if full_automation:
+        sends_out = risk is RiskLevel.EXTERNAL_SEND and Capability.SHELL_RUN in caps
+        reaches = bool(set(caps) & LASTING) or sends_out
+    else:
+        reaches = bool(set(caps) & REACHES_THE_COMPUTER)
+    if tainted and risk is not RiskLevel.READ and reaches and not consented:
         return Decision(
             action="ask",
             reason="this chat contains content from outside (files, pages, command output)",

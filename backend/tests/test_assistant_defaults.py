@@ -69,18 +69,40 @@ def test_with_full_automation_off_every_send_asks_again() -> None:
     assert decision.action == "ask"
 
 
-def test_after_reading_outside_content_only_commands_and_file_changes_ask() -> None:
-    # it read WhatsApp's window or a web page, then operates apps: no questions
+def test_after_reading_outside_content_only_what_lasts_or_sends_data_out_asks() -> None:
+    """Checking flight times read a page, and then every command asked "yes or no" (a command's
+    own output counts as outside content, so the second one always did). What a planted instruction
+    goes for still asks: something that lasts or acts later, and a command sending data away."""
+    # it read WhatsApp's window or a web page, then operates apps, runs commands, writes files
     assert ask("browser_click", RiskLevel.WRITE, Capability.BROWSER, tainted=True) == "allow"
     assert ask("type_text", RiskLevel.WRITE, Capability.INPUT_CONTROL, tainted=True) == "allow"
     assert ask("press_keys", RiskLevel.EXTERNAL_SEND, Capability.INPUT_CONTROL, tainted=True) == "allow"
-    # a planted instruction must not run commands or change files unasked
-    assert ask("run_command", RiskLevel.WRITE, Capability.SHELL_RUN, tainted=True) == "ask"
-    assert ask("write_text_file", RiskLevel.WRITE, Capability.FS_WRITE, tainted=True) == "ask"
-    # and what lasts or acts later: a web page must not plant a "memory" or a routine
+    assert ask("run_shell", RiskLevel.WRITE, Capability.SHELL_RUN, tainted=True) == "allow"
+    assert ask("write_text_file", RiskLevel.WRITE, Capability.FS_WRITE, tainted=True) == "allow"
+    # a web page must not plant a "memory" or a routine, or send files away with a command
     assert ask("remember", RiskLevel.WRITE, Capability.MEMORY, tainted=True) == "ask"
     assert ask("remember", RiskLevel.WRITE, Capability.MEMORY, tainted=False) == "allow"
     assert ask("create_routine", RiskLevel.WRITE, Capability.SCHEDULE, tainted=True) == "ask"
+    assert ask("run_shell", RiskLevel.EXTERNAL_SEND, Capability.SHELL_RUN, tainted=True) == "ask"
+    assert ask("run_shell", RiskLevel.EXTERNAL_SEND, Capability.SHELL_RUN, tainted=False) == "allow"
+    # paying and deleting ask whatever happened before
+    assert ask("run_shell", RiskLevel.DESTRUCTIVE, Capability.SHELL_RUN) == "ask"
+
+
+def test_a_yes_to_its_own_question_is_the_approval() -> None:
+    """ "Shall I?" "Yes." — that yes is the approval: the steps that answer it don't ask again.
+    Paying and deleting still do, and so does anything from a chat app."""
+    tools = Settings().tools
+
+    def asked(tool: str, risk: RiskLevel, *caps: Capability, **kw: object) -> str:
+        return decide(tool=tool, risk=risk, capabilities=caps, policies=tools.policies, tainted=True,
+                      session_grants=set(), full_automation=True, consented=True, **kw).action  # type: ignore[arg-type]  # fmt: skip
+
+    assert asked("remember", RiskLevel.WRITE, Capability.MEMORY) == "allow"
+    assert asked("run_shell", RiskLevel.EXTERNAL_SEND, Capability.SHELL_RUN) == "allow"
+    assert asked("run_shell", RiskLevel.DESTRUCTIVE, Capability.SHELL_RUN) == "ask"
+    assert asked("click_element", RiskLevel.PURCHASE, Capability.INPUT_CONTROL) == "ask"
+    assert asked("remember", RiskLevel.WRITE, Capability.MEMORY, remote="telegram") == "ask"
 
 
 def saved_with(policies: dict[Capability, str], version: int = 2) -> Settings:

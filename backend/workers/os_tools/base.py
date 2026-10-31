@@ -1,5 +1,6 @@
 """os_tools environment and tool base."""
 
+import re
 from pathlib import Path
 from typing import ClassVar
 
@@ -10,7 +11,14 @@ from workers.os_tools.paths import PathGuard
 
 WORKER_NAME = "os_tools"
 
-__all__ = ["WORKER_NAME", "Args", "Env", "WorkerTool", "human_size", "truncate"]
+__all__ = ["STARTS_BY_ITSELF", "WORKER_NAME", "Args", "Env", "WorkerTool", "human_size", "truncate"]
+
+STARTS_BY_ITSELF = re.compile(
+    r"\.(?:zshrc|zshenv|zprofile|zlogin|bashrc|bash_profile|profile)\b|Launch(?:Agents|Daemons)\b"
+    r"|(?:^|[;&|(\s`])crontab\b(?!\s+-l\b)|\blaunchctl\s+(?:load|bootstrap|enable|submit)\b"
+)
+"""Shell startup files, launch agents and cron: what's put there runs later, by itself. Like a
+routine, it asks after reading outside content (the step gets the schedule capability)."""
 
 
 class Env:
