@@ -30,6 +30,9 @@ class WorkerConfig(ContractModel):
     """Absolute folders the tools may touch."""
     denied_paths: tuple[str, ...]
     """Absolute paths that are always off limits, even inside an allowed root."""
+    open_inside: tuple[str, ...] = ()
+    """Folders inside a denied path that run_shell may still use without asking: the abilities
+    Jarvis builds (their code, packages and samples)."""
     shell_allowlist: tuple[str, ...]
     full_control: bool = False
     """run_shell may run any command (see ToolSettings.full_control)."""

@@ -19,6 +19,7 @@ def make_env(tmp_path: Path, full_control: bool = True) -> Env:
     config = WorkerConfig(
         allowed_roots=(str(tmp_path),),
         denied_paths=(str(tmp_path / "jarvis-data"), str(Path.home() / ".ssh")),
+        open_inside=(str(tmp_path / "jarvis-data" / "abilities"),),
         shell_allowlist=("ls",),
         full_control=full_control,
         max_output_chars=4000,
@@ -55,6 +56,27 @@ def test_commands_that_delete_stop_or_touch_secrets_ask(tmp_path: Path, command:
 def test_Jarvis_s_own_data_folder_is_protected_from_the_shell(tmp_path: Path) -> None:
     env = make_env(tmp_path)
     assert danger(f"cat {tmp_path}/jarvis-data/assistant.sqlite3", env)
+
+
+@pytest.mark.parametrize(
+    ("command", "asks"),
+    [
+        ('which sox rec; ls "{data}/abilities/voice_guard/lib" | head', False),
+        ('D="{data}/abilities/voice_guard/heard"; mkdir -p "$D"; echo Saved', False),
+        ("cp ~/Downloads/me.wav {data}/abilities/voice_guard/heard/", False),
+        ("cat {data}/abilities/../assistant.sqlite3", True),
+        ("cd {data}/abilities && cat ../assistant.sqlite3", True),
+        ("ls {data}/abilities-old", True),
+        ("ls {data}/abilities; cat {data}/assistant.sqlite3", True),
+        ("rm -rf {data}/abilities/voice_guard/heard", True),
+    ],
+)
+def test_the_abilities_it_builds_are_open_the_rest_of_its_data_is_not(
+    tmp_path: Path, command: str, asks: bool
+) -> None:
+    """Building an ability (e.g. one that knows the user's voice) works in its own folder without asking."""
+    command = command.format(data=tmp_path / "jarvis-data")
+    assert bool(danger(command, make_env(tmp_path))) is asks, command
 
 
 @pytest.mark.parametrize(
@@ -129,6 +151,14 @@ def test_what_starts_by_itself_later_counts_as_a_routine(tmp_path: Path, command
 def test_what_asks_says_why_first(tmp_path: Path) -> None:
     assessment = RunShell().assess(ShellArgs(command="rm -rf ~/Downloads/old"), make_env(tmp_path))
     assert assessment.summary == "Deletes files: `rm -rf ~/Downloads/old`"
+
+
+def test_the_user_sees_what_a_step_does_not_the_command(tmp_path: Path) -> None:
+    env = make_env(tmp_path)
+    install = ShellArgs(command="which brew && brew install sox", about="Install sox, a sound recorder.")
+    assert RunShell().assess(install, env).summary == "Install sox, a sound recorder"
+    old = ShellArgs(command="rm -rf ~/Downloads/old", about="Clear out the old recordings")
+    assert RunShell().assess(old, env).summary == "Clear out the old recordings (deletes files)"
 
 
 def test_it_is_off_when_full_control_is_turned_off(tmp_path: Path) -> None:

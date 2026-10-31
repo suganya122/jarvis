@@ -72,9 +72,7 @@ class Runtime:
         provider_override: ModelProvider | None = None,
         extra_tools: Iterable[Tool] = (),
     ) -> None:
-        self.store = store
-        self.secrets = secrets
-        self.redactor = redactor
+        self.store, self.secrets, self.redactor = store, secrets, redactor
         self._data_dir = data_dir
         self._settings = settings
         self._override = provider_override
@@ -199,6 +197,7 @@ class Runtime:
         return WorkerConfig(
             allowed_roots=tuple(_expand(p) for p in tools.allowed_roots),
             denied_paths=tuple(_expand(p) for p in denied),
+            open_inside=(_expand(str(self._data_dir / "abilities")),),  # what it builds for itself
             shell_allowlist=tuple(tools.shell_allowlist),
             full_control=tools.full_control,
             max_output_chars=tools.max_output_chars,
