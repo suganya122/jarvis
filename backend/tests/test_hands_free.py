@@ -9,7 +9,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import pytest
 
 import core.hands_free as hands_free
+import core.hands_free_later as hands_free_later
 import core.hands_free_turns as hands_free_turns
+import core.spoken_ask as spoken_ask
 from contracts.voice import TranscriptEvent
 from contracts.ws import (
     ApprovalRequested,
@@ -361,13 +363,13 @@ def test_the_question_is_a_few_words_not_the_whole_card() -> None:
         "Voice check for every request: verify the speaker is the user (srinivasan). If there is "
         "anyone else talking, ignore them and say nothing"
     )
-    question = hands_free_turns.approval_question(_approval("write", f"Build a new ability: {goal}"))
+    question = spoken_ask.approval_question(_approval("write", f"Build a new ability: {goal}"))
     assert question == "Build a new ability: Voice check for every request. Go ahead?"
     pay = "Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr (₹77 + delivery and surge) (push button)"
-    question = hands_free_turns.approval_question(_approval("purchase", pay))
+    question = spoken_ask.approval_question(_approval("purchase", pay))
     assert question == "This spends money: Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr. Go ahead?"
     bill = "Pay TNPDCL electricity bill Rs. 1,245.00 for consumer 06-345-012-187 (INDU S), via BillDesk"
-    question = hands_free_turns.approval_question(_approval("purchase", bill))
+    question = spoken_ask.approval_question(_approval("purchase", bill))
     said = "Pay TNPDCL electricity bill Rs. 1,245.00 for consumer 06-345-012-187"
     assert question == f"This spends money: {said}. Go ahead?"  # the amount is kept, not cut at "Rs."
 
@@ -389,7 +391,7 @@ def test_the_question_is_a_few_words_not_the_whole_card() -> None:
 def test_a_command_is_not_read_out_and_the_amount_always_is(risk: str, summary: str, spoken: str) -> None:
     """Heard on the copies of Uber and Terminal: the Uber question stopped at "T." of "T. Nagar",
     before the fare, and a delete read out "find tilde slash Downloads dash mindepth..."."""
-    assert hands_free_turns.approval_question(_approval(risk, summary)) == spoken
+    assert spoken_ask.approval_question(_approval(risk, summary)) == spoken
 
 
 def test_saying_yes_over_the_question_approves_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -844,5 +846,93 @@ def test_a_voice_check_that_isnt_working_is_said_once_and_it_answers_anyway(
             await rig.until(lambda: len(rig.ears.said) == 6)
             assert rig.ears.said[4].startswith("Heads up: my voice check isn't working")
             assert len(rig.turns) == 4
+
+    asyncio.run(run())
+
+
+def _done(request_id: str) -> ChatDone:
+    return ChatDone(request_id=request_id, model="m", stop_reason="end_turn", usage=Usage(), cost_usd=0,
+                    latency_ms=1, first_token_ms=1, route="model", timings={})  # fmt: skip
+
+
+def test_a_long_spoken_request_carries_on_while_the_conversation_goes_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(hands_free_later, "MOVE_ON_S", 0.3)
+
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+        release = asyncio.Event()
+
+        async def turn(text: str, session: str | None, emit: Callable[[ServerMessage], Awaitable[None]],
+                       speculation: object | None = None) -> str:  # fmt: skip
+            rig.turns.append((text, session))
+            if "report" in text:
+                await emit(ChatDelta(request_id="r1", text="Building it now. "))
+                await emit(
+                    ToolStarted(request_id="r1", call_id="c1", tool="work", summary="Work", risk="write")
+                )
+                await release.wait()
+                await emit(
+                    ToolFinished(request_id="r1", call_id="c1", status="ok", preview="", duration_ms=1)
+                )
+                await emit(ChatDelta(request_id="r1", text="The report is built."))
+                await emit(_done("r1"))
+            else:
+                await emit(ChatDelta(request_id="r2", text="It is noon."))
+                await emit(_done("r2"))
+            return "session-1"
+
+        rig.hf._d.run_turn = turn
+        async with rig.running():
+            await rig.speak("jarvis build the report")
+            await rig.until(lambda: hands_free_later.ON_IT in rig.ears.said)
+            assert rig.ears.said == ["Building it now.", hands_free_later.ON_IT]
+            await rig.speak("what time is it")  # no wake word: the conversation is still open
+            await rig.until(lambda: "It is noon." in rig.ears.said)
+            assert not release.is_set() and [t for t, _ in rig.turns] == [
+                "build the report",
+                "what time is it",
+            ]
+            release.set()
+            await rig.until(lambda: rig.ears.said[-1:] == ["The report is built."])  # told when it's done
+
+    asyncio.run(run())
+
+
+def test_a_request_that_moved_on_asks_its_question_when_free_and_the_next_yes_answers_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(hands_free_later, "MOVE_ON_S", 0.2)
+
+    async def run() -> None:
+        rig = Rig(monkeypatch)
+
+        async def turn(text: str, session: str | None, emit: Callable[[ServerMessage], Awaitable[None]],
+                       speculation: object | None = None) -> str:  # fmt: skip
+            rig.turns.append((text, session))
+            await asyncio.sleep(0.4)  # it has moved on by now
+            ask = ApprovalRequested(
+                approval_id="a1", request_id="r1", call_id="c1", tool="click_element", risk="purchase",
+                summary="Pay ₹1,240 to TNPDCL", reason="", args={}, untrusted_context=False,
+                can_remember=False, expires_in_s=120,
+            )  # fmt: skip
+            await emit(ask)
+            await rig.until(lambda: ("a1", True) in rig.resolved)
+            await emit(ApprovalResolved(approval_id="a1", approved=True, reason="you said yes"))
+            await emit(ChatDelta(request_id="r1", text="Paid."))
+            await emit(_done("r1"))
+            return "session-1"
+
+        rig.hf._d.run_turn = turn
+        async with rig.running():
+            await rig.speak("jarvis pay my eb bill")
+            question = "This spends money: Pay ₹1,240 to TNPDCL. Go ahead?"
+            await rig.until(lambda: question in rig.ears.said)
+            rig.rec.text = ""
+            await asyncio.sleep(0.1)  # once the question has been said
+            await rig.speak("yes")  # no wake word needed: it's listening for the answer
+            await rig.until(lambda: rig.ears.said[-1:] == ["Paid."])
+            assert rig.resolved == [("a1", True)] and len(rig.turns) == 1  # the yes wasn't a new request
 
     asyncio.run(run())

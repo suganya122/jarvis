@@ -18,6 +18,7 @@ from collections import deque
 from typing import Any
 
 from contracts.voice import TranscriptEvent
+from core.hands_free_later import Later
 from core.hands_free_turns import TurnsMixin
 from core.hands_free_types import (
     ACK,
@@ -61,18 +62,16 @@ class HandsFree(TurnsMixin):
         self.state: HandsFreeState = "off"
         self.detail = "starting"
         self._inbox: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
-        self._consuming = False
-        self._speaking = False
+        self._consuming = self._speaking = False
         self._deaf_until = 0.0
         self._stream: str | None = None
         self._main_task: asyncio.Task[None] | None = None
         self._turn_task: asyncio.Task[str] | None = None
         self._session: str | None = None
         self._session_at = 0.0
-        self._mic_on = self._dropped = self._woken = False
+        self._mic_on = self._dropped = self._woken = self._offline = False
         self.floor = NoiseFloor()
         self._speak_lock = asyncio.Lock()
-        self._offline = False
         self._spec: asyncio.Task[object | None] | None = None
         self._spec_text = ""
         self._tasks: set[asyncio.Future[None]] = set()
@@ -83,6 +82,7 @@ class HandsFree(TurnsMixin):
         self._echo_of, self._said_at = "", 0.0  # its last words: kept out of what's heard right after
         self._told = ""
         self._gate = VoiceGate(deps, self._say)  # abilities that listen; it says when they hold back
+        self._later = Later(self.free, self._say, self.wake_now, deps.resolve_approval)
 
     # ---- lifecycle and inputs -----------------------------------------------------
 
@@ -227,8 +227,8 @@ class HandsFree(TurnsMixin):
             follow_up = None if live else self._d.settings().follow_up_s
             heard = await self._hear(wake=False, first_word_s=follow_up, silence_s=silence_s, speculate=True)
             self._woken = False  # pressed mid-conversation: it was already listening
-            if heard is None:
-                if live and not self._offline and self._blocker() is None:
+            if heard is None:  # live, or waiting for the answer to its question: keep listening
+                if (live or self._later.waiting) and not self._offline and self._blocker() is None:
                     pending = None
                     continue
                 return

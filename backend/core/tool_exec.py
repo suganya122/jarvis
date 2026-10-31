@@ -1,6 +1,7 @@
 """Runs one tool call: assess -> policy gate -> approval -> run -> audit."""
 
 import asyncio
+import contextlib
 import json
 import time
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from core.config import Settings
 from core.open_check import OPENS_PAGES, check_opened
 from core.policy import decide
 from core.store import Store
+from core.tasks import SCREEN_TOOLS, TaskBoard
 from core.toolbox import INTERNAL_TOOLS, ToolRegistry
 
 UNTRUSTED_NOTE = (
@@ -42,8 +44,9 @@ class ChatPermissions:
     """What the user was looking at (voice hotkey), pinned to this chat until redirected."""
     request: str = ""
     """The user's latest request text (the context guard checks what they named)."""
-    said_yes: bool = False
-    """That request was a yes to a question it had just asked ("Shall I?"): see policy.decide."""
+    said_yes: set[str] = field(default_factory=set)
+    """Requests that were a yes to a question it had just asked ("Shall I?"): see policy.decide.
+    Per request, since another one may be running alongside in the same chat."""
     paid: list[tuple[str, float, float]] = field(default_factory=list)
     """(request id, amount, when) for each payment the user said yes to: see payment_approved."""
 
@@ -117,6 +120,13 @@ class ToolExecutor:
         self._store = store
         self._settings = settings
         self.guard: Guard | None = None
+        self.board: TaskBoard | None = None
+        """Every running request (set by the chat service): steps that use the screen take turns."""
+
+    def _screen(self, tool: str, request_id: str) -> contextlib.AbstractAsyncContextManager[None]:
+        if self.board is None or tool not in SCREEN_TOOLS:
+            return contextlib.nullcontext()
+        return self.board.use_screen(request_id)
 
     async def execute(
         self,
@@ -209,7 +219,7 @@ class ToolExecutor:
             background=background,
             remote=perms.remote,
             full_automation=settings.full_automation,
-            consented=perms.said_yes and not background,
+            consented=request_id in perms.said_yes and not background,
             payment_approved=payment_approved(perms, request_id, assessment.summary),
         )
         await self._store.audit(
@@ -227,35 +237,42 @@ class ToolExecutor:
         if decision.action == "deny":
             return await finish("denied", f"Not run: {decision.reason}. Tell the user how to enable it.", t0)
 
-        if decision.action == "ask":
-            approved = await self._ask(
-                call,
-                assessment,
-                decision.reason,
-                decision.can_remember,
-                request_id,
-                perms,
-                emit,
-                trace_id,
-                settings.approval_timeout_s,
-            )
-            if approved is not None:
-                return await finish("denied", f"Not run: {approved}.", t0)
-
-        ctx = ToolContext(trace_id=trace_id, session_id=perms.session_id, trust=_trust(perms), direct=direct)
-        try:
-            result = await tool.run(call.input, ctx)
-        except asyncio.CancelledError:
-            await emit(
-                ToolFinished(
-                    request_id=request_id, call_id=call.call_id, status="cancelled", preview="", duration_ms=0
+        async with self._screen(call.name, request_id):  # one screen: another request waits its turn
+            if decision.action == "ask":
+                approved = await self._ask(
+                    call,
+                    assessment,
+                    decision.reason,
+                    decision.can_remember,
+                    request_id,
+                    perms,
+                    emit,
+                    trace_id,
+                    settings.approval_timeout_s,
                 )
+                if approved is not None:
+                    return await finish("denied", f"Not run: {approved}.", t0)
+
+            ctx = ToolContext(
+                trace_id=trace_id, session_id=perms.session_id, trust=_trust(perms), direct=direct
             )
-            raise
-        except Exception as exc:
-            result = ToolResult(ok=False, output=f"Tool failed: {type(exc).__name__}")
-        if call.name in OPENS_PAGES:  # "opened" only means asked: see what actually loaded
-            result = await check_opened(result, self._registry.get, ctx)
+            try:
+                result = await tool.run(call.input, ctx)
+            except asyncio.CancelledError:
+                await emit(
+                    ToolFinished(
+                        request_id=request_id,
+                        call_id=call.call_id,
+                        status="cancelled",
+                        preview="",
+                        duration_ms=0,
+                    )
+                )
+                raise
+            except Exception as exc:
+                result = ToolResult(ok=False, output=f"Tool failed: {type(exc).__name__}")
+            if call.name in OPENS_PAGES:  # "opened" only means asked: see what actually loaded
+                result = await check_opened(result, self._registry.get, ctx)
         if result.trust is Trust.UNTRUSTED and not perms.tainted:
             perms.tainted = True
             await self._store.mark_tainted(perms.session_id)

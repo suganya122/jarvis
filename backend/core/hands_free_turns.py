@@ -3,10 +3,10 @@
 
 import asyncio
 import logging
-import re
+from collections.abc import Callable
 from typing import Any
 
-from contracts.common import MONEY
+import core.hands_free_later as later
 from contracts.ws import (
     ApprovalRequested,
     ApprovalResolved,
@@ -14,11 +14,13 @@ from contracts.ws import (
     ChatDelta,
     ChatDone,
     ChatError,
+    ChatStarted,
     ServerMessage,
     ToolFinished,
     ToolStarted,
 )
 from core.hands_free_barge import BargeIn
+from core.hands_free_later import ON_IT, Later
 from core.hands_free_types import (
     APPROVAL_LISTEN_S,
     APPROVAL_SILENCE_S,
@@ -39,6 +41,7 @@ from core.speech_text import (
     without_echo,
     yes_no,
 )
+from core.spoken_ask import approval_question
 from core.voice_gate import VoiceGate
 
 log = logging.getLogger(__name__)
@@ -72,6 +75,7 @@ class TurnsMixin:
     _echo_of: str
     _said_at: float
     _gate: VoiceGate
+    _later: Later
 
     async def _say(self, text: str) -> None:
         raise NotImplementedError
@@ -191,6 +195,8 @@ class TurnsMixin:
         )
         if not await self._for_us(text):
             return None
+        if self._later.answer(text):  # the yes or no to a question asked for a request that moved on
+            return "OK."
         self._barge, self._saying = barge, ""
         if self._carry:  # they went on talking before it answered: one request, not two halves
             text, self._carry = f"{self._carry} {text}", ""
@@ -256,10 +262,15 @@ class TurnsMixin:
                 await self._say(sentence)
 
         speaker = asyncio.create_task(speak_as_it_streams())
+        moved_on: list[Callable[[ServerMessage], None]] = []  # once it carries on by itself: its news
 
         async def emit(msg: ServerMessage) -> None:
             await self._d.screen.observe(msg)
-            if isinstance(msg, ChatDelta):
+            if isinstance(msg, ChatStarted):  # the conversation goes on in its chat, even if it moves on
+                self._session, self._session_at = msg.session_id, self._d.clock()
+            if moved_on:
+                moved_on[0](msg)
+            elif isinstance(msg, ChatDelta):
                 for sentence in splitter.push(msg.text):
                     to_say.put_nowait(sentence)
             elif isinstance(msg, ChatError):
@@ -281,14 +292,25 @@ class TurnsMixin:
 
         if self._session and self._d.clock() - self._session_at > SESSION_TTL_S:
             self._session = None
-        self._turn_task = asyncio.create_task(self._d.run_turn(text, self._session, emit, speculation))
+        request = self._turn_task = asyncio.create_task(
+            self._d.run_turn(text, self._session, emit, speculation)
+        )
         try:
-            self._session = await self._turn_task
+            if await self._moves_on(request):
+                moved_on.append(self._later.keep(request))
+                if rest := splitter.flush():
+                    to_say.put_nowait(rest)
+                to_say.put_nowait(None)
+                await speaker  # what it had started saying ("Checking flights now.")
+                return ON_IT
+            self._session = request.result()
             self._session_at = self._d.clock()
         except asyncio.CancelledError:
             speaker.cancel()
             current = asyncio.current_task()
             if current is not None and current.cancelling():
+                if not moved_on:
+                    request.cancel()
                 raise  # we're being shut down
             return None  # interrupted with Stop: the turn already reported it
         except Exception:
@@ -309,6 +331,16 @@ class TurnsMixin:
         if "error" in outcome:
             return f"Sorry, that didn't work. {outcome['error']}"
         return None if spoken["any"] else "Done."
+
+    async def _moves_on(self, request: "asyncio.Task[str]") -> bool:
+        """Wait for the request, up to MOVE_ON_S. Still working then (and not asking anything aloud,
+        not being talked over), it carries on by itself and the conversation goes on."""
+        deadline = self._d.clock() + later.MOVE_ON_S
+        while not request.done():
+            await asyncio.wait({request}, timeout=max(0.1, deadline - self._d.clock()))
+            if not request.done() and self._d.clock() >= deadline and not self._asking and not self._cut_in():
+                return True
+        return False
 
     async def _ask_approval(self, msg: ApprovalRequested) -> None:
         """Asked aloud in a few words; a spoken yes/no or the overlay card's buttons answer it,
@@ -333,48 +365,3 @@ class TurnsMixin:
         finally:
             self._asking -= 1
             self.state = "thinking"  # back to the request: talking over it works again
-
-
-SPOKEN_ASK_CHARS = 80
-SERIOUS = {"external_send": "This sends something", "purchase": "This spends money"}
-
-
-def approval_question(msg: ApprovalRequested) -> str:
-    """A few words, quick to hear and answer: what's about to happen (the card shows the rest),
-    and the kind of step when it matters."""
-    what = brief(CODE.sub(_where, msg.summary))
-    kind = SERIOUS.get(str(msg.risk))
-    return f"{kind}: {what}. Go ahead?" if kind else f"{what}. Go ahead?"
-
-
-CODE = re.compile(r":?\s*`([^`]*)`")
-ABBREVIATION = re.compile(r"(?:^|\s)\S{1,3}$")
-"""'T.' in 'T. Nagar', 'Rs.', 'St.': a full stop after these doesn't end the sentence."""
-
-
-def _where(code: re.Match[str]) -> str:
-    """A command isn't read out: the folders and sites it touches are ('in Downloads'). A few plain
-    words are ('killall Spotify')."""
-    if len(code.group(1)) <= 30 and not re.search(r"[~/|&;<>$\\-]", code.group(1)):
-        return f": {code.group(1)}"
-    sites = re.findall(r"https?://([\w.-]+)", code.group(1))
-    paths = re.findall(r"(?<![\w:/.])~?/[\w.~/-]*\w", code.group(1))
-    names = list(dict.fromkeys(p.rstrip("/").rsplit("/", 1)[-1] for p in paths))
-    return (f" in {', '.join(names)}" if names else "") + (f" to {', '.join(sites)}" if sites else "")
-
-
-def brief(summary: str, limit: int = SPOKEN_ASK_CHARS) -> str:
-    """The summary's first line, ended at a clause when it's long; an amount of money stays in."""
-    text = summary.split("\n", 1)[0].strip().rstrip(".")
-    if len(text) <= limit:
-        return text
-    cut, said = text[:limit], text[:limit].rsplit(" ", 1)[0]
-    for mark in (". ", ": ", "; ", " (", ", "):
-        end = cut.rfind(mark)
-        while mark == ". " and end >= 0 and ABBREVIATION.search(cut[:end]):
-            end = cut.rfind(mark, 0, end)
-        if end >= limit // 3:
-            said = cut[:end]
-            break
-    money = MONEY.search(text)
-    return f"{said}, {money.group()}" if money and not MONEY.search(said) else said

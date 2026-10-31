@@ -73,9 +73,7 @@ class Runtime:
         extra_tools: Iterable[Tool] = (),
     ) -> None:
         self.store, self.secrets, self.redactor = store, secrets, redactor
-        self._data_dir = data_dir
-        self._settings = settings
-        self._override = provider_override
+        self._data_dir, self._settings, self._override = data_dir, settings, provider_override
         self._provider = provider_override or build_provider(settings, secrets)
         self.spend = SpendGuard(store, lambda: self._settings)
         self._capped = CappedProvider(lambda: self._provider, self.spend)
@@ -349,7 +347,7 @@ class Runtime:
         denied = self.approvals.deny_all(reason)
         if self.voice_loop is not None:
             self.voice_loop.interrupt()  # stop talking and drop a spoken request
-        tasks = [t for t in self._tasks if not t.done()]
+        tasks = [*(t for t in self._tasks if not t.done()), *self.chat.board.cancel_all()]  # spoken ones too
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

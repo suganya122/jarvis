@@ -42,6 +42,8 @@ from core.speculation import Speculation
 from core.speculation import start as start_speculation
 from core.speech_text import is_yes_to
 from core.store import Store
+from core.task_tools import LookAtTasks, ManageTask
+from core.tasks import TaskBoard
 from core.tool_exec import ChatPermissions, ToolExecutor
 from core.toolbox import ToolRegistry
 from core.turn import Step, Turn
@@ -68,7 +70,9 @@ class ChatService(RoutesMixin):
         context: Callable[[str], Awaitable[str]] | None = None,
         active: Callable[[ChatPermissions], str] | None = None,
         on_turn: Callable[[str, str], None] | None = None,
+        board: TaskBoard | None = None,
     ) -> None:
+        self.board = board or TaskBoard()  # every request while it runs: see core.tasks
         self._on_turn = on_turn
         self._active = active
         self._skills = skills
@@ -78,6 +82,9 @@ class ChatService(RoutesMixin):
         self._settings = settings
         self._registry = registry
         self._executor = executor
+        executor.board = self.board
+        for tool in (LookAtTasks(self.board), ManageTask(self.board)):  # "how's it going?", "pause it"
+            registry.register(tool)
         self._clock = clock
         self._perms: dict[str, ChatPermissions] = {}
 
@@ -91,6 +98,8 @@ class ChatService(RoutesMixin):
     ) -> None:
         """Run one chat turn. Cancelling the task stops everything and keeps partial work."""
         turn = Turn(trace_id=new_trace_id(), started=self._clock(), background=background)
+        task = self.board.start(send.request_id, turn.trace_id, send.text, background)
+        emit = self.board.watch(task, emit)
         try:
             await self._run_turn(send, emit, turn, speculation, active)
         except asyncio.CancelledError:
@@ -102,6 +111,9 @@ class ChatService(RoutesMixin):
             await self._store.audit("user", "chat.cancelled", {}, turn.trace_id)
             await emit(ChatCancelled(request_id=send.request_id))
         finally:
+            await self.board.end(task)
+            if turn.session_id and (perms := self._perms.get(turn.session_id)):
+                perms.said_yes.discard(send.request_id)
             if speculation is not None and not speculation.used:
                 await self.discard(speculation)
 
@@ -175,7 +187,8 @@ class ChatService(RoutesMixin):
         cleaned = clean(send.text)
         history = await self._store.history(session_id)
         last_said = next((m.text for m in reversed(history) if m.role is Role.ASSISTANT and m.text), "")
-        perms.said_yes = is_yes_to(last_said, send.text)
+        if is_yes_to(last_said, send.text):  # per request: another one running alongside keeps its own
+            perms.said_yes.add(send.request_id)
         await emit(
             ChatStarted(
                 request_id=send.request_id,
@@ -219,6 +232,8 @@ class ChatService(RoutesMixin):
         context = await self._context(send.text) if self._context else ""
         if self._active is not None and (where := self._active(perms)):
             context = f"{context}\n\n{where}" if context else where
+        if others := self.board.summary(but=send.request_id):  # "how's it going?" is answered from this
+            context = f"{context}\n\n{others}" if context else others
         source: AsyncIterator[ModelEvent] | None = None
         if speculation is not None:
             if speculation.matches(send.text, send.session_id, len(history), tier, self._clock()):
@@ -300,7 +315,8 @@ class ChatService(RoutesMixin):
                         evidence=outcome.evidence,
                     )
                 )
-            messages.extend(await self._flush(turn, "Not run."))
+            added = await self.board.checkpoint(send.request_id)  # a pause waits here; added words come in
+            messages.extend(await self._flush(turn, "Not run.", added))
             if strikes >= MAX_STRIKES:  # told to try another way, and it kept repeating
                 await self._stopped(send, emit, turn, "loop_detected")
                 return
@@ -347,8 +363,9 @@ class ChatService(RoutesMixin):
         )
         return None
 
-    async def _flush(self, turn: Turn, filler: str) -> list[ChatMessage]:
-        """Store the pending tool-calling turn with a result for every call."""
+    async def _flush(self, turn: Turn, filler: str, added: str = "") -> list[ChatMessage]:
+        """Store the pending tool-calling turn with a result for every call (and, after them, what
+        the user added while it worked)."""
         step, turn.pending = turn.pending, None
         if step is None or turn.session_id is None:
             return []
@@ -356,6 +373,6 @@ class ChatService(RoutesMixin):
             step.results.get(c.call_id) or ToolResultBlock(call_id=c.call_id, output=filler, is_error=True)
             for c in step.calls
         )
-        results = ChatMessage(role=Role.USER, text="", tool_results=blocks)
+        results = ChatMessage(role=Role.USER, text=added, tool_results=blocks)
         await self._store.append_messages(turn.session_id, turn.trace_id, step.assistant, results)
         return [step.assistant, results]
