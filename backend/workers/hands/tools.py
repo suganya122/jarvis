@@ -10,7 +10,7 @@ from contracts.common import Capability, RiskLevel, Trust
 from contracts.hands import ActionResult, ElementInfo
 from contracts.tools import ToolAssessment, ToolResult
 from workers.common import clipboard
-from workers.common.base import Args, truncate
+from workers.common.base import Args, keep_ends, snippet, truncate
 from workers.common.base import WorkerTool as _WorkerTool
 from workers.hands import uinput
 from workers.hands.env import MAX_IDS as MAX_IDS
@@ -18,12 +18,7 @@ from workers.hands.env import HandsEnv as HandsEnv
 from workers.hands.env import HandsUnavailable as HandsUnavailable
 from workers.hands.env import IdMap as IdMap
 from workers.hands.keys import display, parse_combo
-from workers.hands.locate import (
-    ElementRef,
-    WindowRef,
-    element_meta,
-    window_meta,
-)
+from workers.hands.locate import ElementRef, WindowRef, element_meta, window_meta
 from workers.hands.risk import DESCRIBE_THE_PAYMENT, click_risk, key_risk, label_risk, runs_commands
 
 WORKER_NAME = "hands"
@@ -33,12 +28,14 @@ class WorkerTool[A: Args](_WorkerTool[A, HandsEnv]):
     source: ClassVar[str] = WORKER_NAME
 
 
-def _element_line(env: HandsEnv, info: ElementInfo, window_label: str, window_meta_: dict[str, Any]) -> str:
-    meta = element_meta(info.role, info.name, window_meta_)
-    short = env.ids.add("e", info.element_id, f"{info.role} '{info.name}' in {window_label}", meta)
+def _element_line(
+    env: HandsEnv, info: ElementInfo, label: str, wmeta: dict[str, Any], query: str = ""
+) -> str:
+    meta = element_meta(info.role, info.name, wmeta)
+    short = env.ids.add("e", info.element_id, f"{info.role} '{info.name}' in {label}", meta)
     parts = [f"{short}  {info.role} '{info.name}'"]
     if info.text:
-        parts.append(f"text='{info.text[:120]}'")
+        parts.append(f"text='{snippet(info.text, query)}'")
     if info.role == "password text":
         parts.append("(password: hidden)")
     flags: list[str] = [s for s in ("checked", "focused", "selected", "expanded") if s in info.states]
@@ -112,7 +109,7 @@ class FindElements(WorkerTool[FindArgs]):
         real, label = env.window(args.window_id)[:2]
         infos = await asyncio.to_thread(env.hands.find_elements, real, args.query, args.limit)
         wmeta = env.ids.meta(env.ids.short_for(real) or "")
-        lines = [_element_line(env, i, label, wmeta) for i in infos]
+        lines = [_element_line(env, i, label, wmeta, args.query) for i in infos]
         text = "\n".join(lines) if lines else "No matching controls."
         return ToolResult(ok=True, output=truncate(text, env.config.max_output_chars), trust=Trust.UNTRUSTED)
 
@@ -310,7 +307,7 @@ class ReadElement(WorkerTool[ElementArgs]):
         if info.role == "password text":
             return ToolResult(ok=True, output="(password field: hidden)")
         text = info.text if info.text is not None else info.name
-        return ToolResult(ok=True, output=truncate(text, env.config.max_output_chars), trust=Trust.UNTRUSTED)
+        return ToolResult(ok=True, output=keep_ends(text, env.config.max_output_chars), trust=Trust.UNTRUSTED)
 
 
 class InsertArgs(Args):

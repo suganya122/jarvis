@@ -15,6 +15,8 @@ from collections.abc import Awaitable, Callable
 
 import aiosqlite
 
+from contracts.worker import WorkerConfig
+from core.projects.cc_tools import StartClaudeCode, TellClaudeCode
 from core.projects.review import MAX_ROUNDS, Host, Reviewer, RuntimeHost
 from core.projects.store import ProjectStore
 from core.projects.tools import ProjectStatus, SaveProject, describe
@@ -33,13 +35,28 @@ __all__ = ["Projects", "RuntimeHost"]
 
 
 class Projects:
-    def __init__(self, conn: aiosqlite.Connection, registry: ToolRegistry, host: Host) -> None:
+    def __init__(
+        self,
+        conn: aiosqlite.Connection,
+        registry: ToolRegistry,
+        host: Host,
+        worker_config: Callable[[], WorkerConfig] | None = None,
+    ) -> None:
+        """worker_config: its protected paths (keys, the keychain, Jarvis's data) are off limits to
+        Claude Code too."""
+        protected = (lambda: list(worker_config().denied_paths)) if worker_config else list
         self.store = ProjectStore(conn)
         reviewer = Reviewer(self.store, host)
         self.watcher = ProjectWatcher(
             self.store, registry, host.tell, reviewer.review, MAX_ROUNDS, host.track
         )
-        for tool in (SaveProject(self.store, lambda: self.watcher.start()), ProjectStatus(self.store)):
+        watch = lambda: self.watcher.start()  # noqa: E731
+        for tool in (
+            SaveProject(self.store, watch),
+            ProjectStatus(self.store),
+            StartClaudeCode(self.store, protected, watch),
+            TellClaudeCode(self.store, protected, watch),
+        ):
             registry.register(tool)
 
     async def context(self) -> str:

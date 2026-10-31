@@ -12,10 +12,12 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from contracts.common import Trust
 from contracts.tools import ToolContext
+from core.projects import claude_code
 from core.projects.store import WATCHED, Project, ProjectStore
 from core.toolbox import ToolRegistry
 
@@ -124,7 +126,7 @@ class ProjectWatcher:
             interrupted = project.status == "reviewing" and (running is None or running.done())
             if (project.review_due or interrupted) and project.status not in WATCHED:
                 self._start_review(project)  # due, or cut short (a restart, the kill switch)
-        watched = [p for p in active if p.status in WATCHED and p.watch_window]
+        watched = [p for p in active if p.status in WATCHED and (p.watch_window or p.folder)]
         for gone in set(self._watches) - {p.id for p in watched}:
             del self._watches[gone]
         for project in watched:
@@ -140,6 +142,9 @@ class ProjectWatcher:
         return result.ok, result.output
 
     async def _look(self, project: Project, watch: Watch) -> None:
+        if project.folder:  # Claude Code run by Jarvis: its folder says what it's doing
+            await self._look_at_run(project)
+            return
         ok, listing = await self._run("list_windows", {})
         window = find_window(listing, project.watch_window) if ok else None
         if window is None:
@@ -177,6 +182,21 @@ class ProjectWatcher:
             )
         elif not watch.seen_working and watch.idle >= NEVER_SEEN_AFTER:
             await self._finish(project, "answered", f"{who} seems to have answered on {project.name}.")
+
+    async def _look_at_run(self, project: Project) -> None:
+        run = await asyncio.to_thread(claude_code.status, Path(project.folder))
+        if run.state == "working":
+            if project.status != "working":
+                await self._store.update(project, status="working", detail="Claude Code is working on it.")
+            return
+        if run.state == "none":
+            await self._finish(project, "paused", f"Claude Code isn't running for {project.name}.")
+        elif run.state == "stopped":
+            await self._finish(
+                project, "answered", f"Claude Code stopped on {project.name} before it finished."
+            )
+        else:
+            await self._finish(project, "answered", f"Claude Code has finished {project.name}.")
 
     async def _finish(self, project: Project, status: str, said: str) -> None:
         checking = status == "answered" and self._review is not None and project.rounds < self._rounds

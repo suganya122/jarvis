@@ -91,7 +91,7 @@ class Runtime:
         for tool in [*memory_tools, *self.knowledge.tools, *extra_tools]:
             self.registry.register(tool)
         self.abilities = Abilities(data_dir / "abilities", self.registry, self.provider, store.record_cost)
-        self.projects = Projects(store.conn, self.registry, RuntimeHost(self))
+        self.projects = Projects(store.conn, self.registry, RuntimeHost(self), self.worker_config)
         self.approvals = ApprovalBroker()
         executor = ToolExecutor(self.registry, self.approvals, store, lambda: self._settings)
         self.context = ContextService(self.registry, lambda: self._settings, store)

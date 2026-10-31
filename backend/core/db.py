@@ -165,6 +165,10 @@ MIGRATIONS: list[str] = [
     ALTER TABLE projects ADD COLUMN review_due INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE projects ADD COLUMN session_id TEXT NOT NULL DEFAULT '';
     """,
+    # 10: Claude Code runs in the project's own folder (see core/projects/claude_code.py)
+    """
+    ALTER TABLE projects ADD COLUMN folder TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

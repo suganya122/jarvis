@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from pydantic import Field
@@ -78,12 +79,17 @@ class ShellArgs(Args):
 
 def danger(command: str, env: Env) -> str:
     """Why this command must ask the user first, or ''."""
+    return why_it_asks(command, env.config.denied_paths)
+
+
+def why_it_asks(command: str, protected_paths: Iterable[str]) -> str:
+    """danger(), for callers without a worker environment (Claude Code's permission hook)."""
     home = str(Path.home())
     text = command.replace("~", home).replace("$HOME", home).replace("${HOME}", home)
     for pattern, what in DESTRUCTIVE:
         if re.search(pattern, text):
             return what
-    for protected in env.config.denied_paths:  # keys, the keychain, Jarvis's own data folder
+    for protected in protected_paths:  # keys, the keychain, Jarvis's own data folder
         if protected and protected in text:
             return "touches secrets or Jarvis's own data"
     if SECRET_WORDS.search(text):

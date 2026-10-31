@@ -11,11 +11,12 @@ import aiosqlite
 Status = Literal["understanding", "ready", "sent", "working", "answered", "reviewing", "paused", "done"]
 STATUSES: tuple[str, ...] = get_args(Status)
 WATCHED = ("sent", "working")
-"""While the other AI has it: the background watcher looks at its window."""
+"""While the other AI has it: the background watcher looks at its window (or, for Claude Code run
+by Jarvis, at its folder)."""
 MAX_LEARNED = 60
 COLUMNS = (
     "id, name, idea, learned, brief, built_with, watch_window, working_marker, status, detail, created_at, "
-    "updated_at, rounds, review_due, session_id"
+    "updated_at, rounds, review_due, session_id, folder"
 )
 
 
@@ -38,6 +39,8 @@ class Project:
     review_due: bool = False
     session_id: str = ""
     """The conversation the checks run in, so each round knows the last."""
+    folder: str = ""
+    """Where Claude Code builds it, when Jarvis runs Claude Code (core.projects.claude_code)."""
 
 
 def _row(row: aiosqlite.Row) -> Project:
@@ -57,6 +60,7 @@ def _row(row: aiosqlite.Row) -> Project:
         rounds=row["rounds"],
         review_due=bool(row["review_due"]),
         session_id=row["session_id"],
+        folder=row["folder"],
     )
 
 
@@ -74,7 +78,8 @@ class ProjectStore:
             uuid.uuid4().hex[:12], name.strip(), idea.strip(), "understanding", created_at=now, updated_at=now
         )
         await self._conn.execute(
-            f"INSERT INTO projects ({COLUMNS}) VALUES (?, ?, ?, '[]', '', '', '', '', ?, '', ?, ?, 0, 0, '')",  # noqa: S608
+            f"INSERT INTO projects ({COLUMNS}) "  # noqa: S608
+            "VALUES (?, ?, ?, '[]', '', '', '', '', ?, '', ?, ?, 0, 0, '', '')",
             (project.id, project.name, project.idea, project.status, now, now),
         )
         await self._conn.commit()
@@ -98,7 +103,7 @@ class ProjectStore:
     async def update(self, project: Project, **fields: object) -> None:
         """Change only these fields (in the database and on `project`), so the watcher and a check
         never write back an older copy over what the model saved meanwhile."""
-        allowed = {"status", "detail", "rounds", "review_due", "session_id"}
+        allowed = {"status", "detail", "rounds", "review_due", "session_id", "folder"}
         assert set(fields) <= allowed, set(fields) - allowed
         for key, value in fields.items():
             setattr(project, key, value)
