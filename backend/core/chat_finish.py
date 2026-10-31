@@ -7,15 +7,23 @@ import logging
 from collections.abc import Callable
 from typing import Literal
 
-from contracts.model import ModelTier
+from contracts.model import ChatMessage, ModelTier, Role
 from contracts.skills import SkillNote
-from contracts.ws import ChatDone, ChatSend
+from contracts.ws import ChatDelta, ChatDone, ChatSend
 from core.chat_types import Emit
 from core.config import Settings
 from core.store import Store
 from core.turn import Turn
 
 log = logging.getLogger("core.chat")
+STOPPED = {
+    "step_limit": "I've stopped here: this is taking more steps than I take in one go. "
+    'Say "carry on" and I\'ll continue from here.',
+    "budget": "I've stopped here: this is taking more work than I do in one go. "
+    'Say "carry on" and I\'ll continue from here.',
+    "loop_detected": "I've stopped: I kept getting the same result. "
+    'Say "carry on" to try again, or tell me what to do differently.',
+}
 
 
 class FinishMixin:
@@ -34,6 +42,15 @@ class FinishMixin:
             return tier
         log.info("trace=%s escalating to balanced: %s", turn.trace_id, turn.escalated)
         return ModelTier.BALANCED
+
+    async def _stopped(self, send: ChatSend, emit: Emit, turn: Turn, stop_reason: str) -> None:
+        """Stopped before the task was done: say so, so it never just goes quiet halfway."""
+        text = STOPPED.get(stop_reason, STOPPED["step_limit"])
+        await emit(ChatDelta(request_id=send.request_id, text=text))
+        if turn.session_id is not None:
+            message = ChatMessage(role=Role.ASSISTANT, text=text)
+            await self._store.append_message(turn.session_id, turn.trace_id, message)
+        await self._done(send, emit, turn, stop_reason)
 
     async def _done(
         self,

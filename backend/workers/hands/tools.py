@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
-from contracts.common import MONEY, Capability, RiskLevel, Trust
+from contracts.common import Capability, RiskLevel, Trust
 from contracts.hands import ActionResult, ElementInfo
 from contracts.tools import ToolAssessment, ToolResult
 from workers.common import clipboard
@@ -24,7 +24,7 @@ from workers.hands.locate import (
     element_meta,
     window_meta,
 )
-from workers.hands.risk import key_risk, label_risk, runs_commands
+from workers.hands.risk import DESCRIBE_THE_PAYMENT, click_risk, key_risk, label_risk, runs_commands
 
 WORKER_NAME = "hands"
 
@@ -128,7 +128,7 @@ class ClickArgs(ElementArgs):
         description=(
             "For a pay, buy, send or delete button: what it will do, as the screen shows it "
             "(amount and currency, to whom, which card or account, what is sent or deleted). "
-            "The user sees this when asked to confirm."
+            "The user sees this when asked to confirm; a button that pays needs it."
         ),
     )
 
@@ -144,10 +144,11 @@ class ClickElement(WorkerTool[ClickArgs]):
         real, label = env.element(args.element_id)[:2]
         info = env.hands.describe(real)
         about = args.about.strip()
-        # A price on a control is shopping (a product, the cart and its total). Its words ("Pay now"),
-        # or the click described as paying an amount, make it a payment.
-        risk = RiskLevel.PURCHASE if MONEY.search(about) else label_risk(info.name, info.text or "", about)
-        return ToolAssessment(risk=risk, summary=f"{about} ({label})" if about else f"Click {label}")
+        risk = click_risk(info.role, info.name, info.text or "", about)
+        error = DESCRIBE_THE_PAYMENT if risk is RiskLevel.PURCHASE and not about else None
+        return ToolAssessment(
+            risk=risk, summary=f"{about} ({label})" if about else f"Click {label}", error=error
+        )
 
     async def run(self, args: ClickArgs, env: HandsEnv) -> ToolResult:
         real, label, short = env.element(args.element_id)

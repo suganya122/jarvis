@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 import time
-from collections import Counter
+from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from contracts import new_trace_id
@@ -168,7 +168,7 @@ class ChatService(RoutesMixin):
         cleaned = clean(send.text)
         history = await self._store.history(session_id)
         last_said = next((m.text for m in reversed(history) if m.role is Role.ASSISTANT and m.text), "")
-        perms.said_yes, perms.paid_up_to = is_yes_to(last_said, send.text), None
+        perms.said_yes = is_yes_to(last_said, send.text)
         await emit(
             ChatStarted(
                 request_id=send.request_id,
@@ -221,7 +221,7 @@ class ChatService(RoutesMixin):
                     messages, context = list(speculation.request.messages), speculation.request.context
             else:
                 turn.speculation = "discarded"
-        seen: Counter[tuple[str, str]] = Counter()
+        seen: defaultdict[tuple[str, str], list[str]] = defaultdict(list)  # what each call gave, in order
         limits = settings.agent
         if turn.background:  # a background task has its own, larger but hard budget
             bg = settings.background
@@ -265,9 +265,9 @@ class ChatService(RoutesMixin):
             looping = False
             for call in calls:
                 key = (call.name, json.dumps(call.input, sort_keys=True, default=str))
-                seen[key] += 1
-                if seen[key] > limits.max_identical_calls:
-                    looping = True
+                last = seen[key][-limits.max_identical_calls :]
+                if len(last) == limits.max_identical_calls and len(set(last)) == 1:
+                    looping = True  # reading a page again after it changed is not
                     break
                 outcome = await self._executor.execute(
                     call,
@@ -278,6 +278,7 @@ class ChatService(RoutesMixin):
                     background=turn.background,
                 )
                 turn.pending.results[call.call_id] = outcome.block
+                seen[key].append(outcome.block.output)
                 turn.trace.append(
                     TraceStep(
                         tool=call.name,
@@ -293,13 +294,13 @@ class ChatService(RoutesMixin):
             )
             messages.extend(await self._flush(turn, filler))
             if looping:
-                await self._done(send, emit, turn, "loop_detected")
+                await self._stopped(send, emit, turn, "loop_detected")
                 return
             tier = self._maybe_escalate(turn, tier, step_number, settings)
             if turn.total_tokens > limits.max_turn_tokens:
-                await self._done(send, emit, turn, "budget")
+                await self._stopped(send, emit, turn, "budget")
                 return
-        await self._done(send, emit, turn, "step_limit")
+        await self._stopped(send, emit, turn, "step_limit")
 
     async def _model_step(
         self,

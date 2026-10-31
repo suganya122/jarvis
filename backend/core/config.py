@@ -167,7 +167,8 @@ class AgentSettings(BaseModel):
     max_turn_tokens: int = Field(default=200_000, ge=1_000)
     """Stop the turn once input + output tokens across its steps exceed this."""
     max_identical_calls: int = Field(default=2, ge=1, le=10)
-    """Same tool with the same arguments more often than this in one turn = a loop."""
+    """The same call giving the same result this many times in a row, in one turn, stops it as a loop
+    (reading a page again after it changed is not one)."""
     escalate: bool = True
     """A Cheap turn moves to Balanced (once) when a step fails or the task is multi-step."""
     escalate_after_steps: int = Field(default=3, ge=2, le=50)

@@ -71,6 +71,28 @@ async def test_a_price_on_a_button_is_shopping_and_paying_is_said_with_the_amoun
     assert risk("Continue", about="Pay ₹134 to Blinkit with the HDFC card") is RiskLevel.PURCHASE
     asked = click.assess(T.ClickArgs(element_id=names["Increment"], about="Pay ₹134 to Blinkit"), env)
     assert asked.summary.startswith("Pay ₹134 to Blinkit (")  # what it does comes first, then the button
+    assert not asked.error
+
+    window.nodes["fake|w1/increment"].name = "Recharge Now"  # Airtel: asked with no amount, then again
+    unsaid = click.assess(T.ClickArgs(element_id=names["Increment"]), env)
+    assert unsaid.risk is RiskLevel.PURCHASE and unsaid.error and "amount" in unsaid.error  # say it first
+    window.nodes["fake|w1/increment"].role = "link"  # a menu link to the recharge or bills page
+    for label in ("Recharge", "Pay Bills", "Book a Cylinder"):
+        assert risk(label) is RiskLevel.WRITE, label
+    assert risk("Pay now", about="Pay ₹349 to Airtel") is RiskLevel.PURCHASE
+
+
+async def test_a_control_can_be_given_by_its_name_when_it_is_the_only_one(env: T.HandsEnv) -> None:
+    """After a click changed the page, Claude often names the new field ('Enter your 10-digit
+    mobile number') instead of reading the page again for its id."""
+    await T.ListWindows().run(T.NoArgs(), env)
+    click = T.ClickElement()
+    assessment = click.assess(T.ClickArgs(element_id="increment"), env)
+    assert assessment.risk is RiskLevel.WRITE and "push button 'Increment'" in assessment.summary
+    assert (await click.run(T.ClickArgs(element_id="Increment"), env)).ok
+    assert click.assess(T.ClickArgs(element_id="Delete all"), env).risk is RiskLevel.DESTRUCTIVE
+    with pytest.raises(T.HandsUnavailable, match="call find_elements again"):
+        click.assess(T.ClickArgs(element_id="Pay now"), env)  # no such control: read the page
 
 
 async def test_password_field_is_refused_and_hidden(env: T.HandsEnv) -> None:

@@ -357,6 +357,9 @@ def brief(summary: str, limit: int = SPOKEN_ASK_CHARS) -> str:
         return text
     cut = text[:limit]
     for mark in (". ", ": ", "; ", " (", ", "):
-        if (end := cut.rfind(mark)) >= limit // 3:
+        end = cut.rfind(mark)
+        while mark == ". " and end >= 0 and cut[end + 2 : end + 3].isdigit():  # "Rs. 1,245" goes on
+            end = cut.rfind(mark, 0, end)
+        if end >= limit // 3:
             return cut[:end]
     return cut.rsplit(" ", 1)[0]

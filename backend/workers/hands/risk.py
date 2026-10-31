@@ -2,7 +2,7 @@
 
 import re
 
-from contracts.common import RiskLevel
+from contracts.common import MONEY, RiskLevel
 
 _PURCHASE = re.compile(
     r"\b(buy|purchase|pay|payment|pay now|checkout|check out|place (?:your )?order|order now|subscribe|"
@@ -26,6 +26,22 @@ FILE_MANAGERS = re.compile(r"finder|files|nautilus|dolphin|explorer|thunar|nemo"
 """Where Delete on its own deletes the selected files."""
 TERMINALS = re.compile(r"\bterminal\b|iterm|gnome-terminal|konsole|alacritty|kitty|wezterm|warp|xterm", re.I)
 """Where Enter runs whatever was typed as a command."""
+
+
+DESCRIBE_THE_PAYMENT = (
+    'this button pays: click it again with "about" saying what it pays, as the screen shows it (the '
+    "amount, to whom, and with which card or UPI ID), so the user is asked once, with those details"
+)
+
+
+def click_risk(role: str, name: str, text: str, about: str) -> RiskLevel:
+    """A price on a control is shopping (a product, the cart and its total), and a link saying "Pay
+    bills" or "Recharge" goes to that page. A button's words ("Pay now"), or the click described as
+    paying an amount, make it a payment."""
+    if MONEY.search(about):
+        return RiskLevel.PURCHASE
+    risk = label_risk(name, text, about)
+    return RiskLevel.WRITE if risk is RiskLevel.PURCHASE and role == "link" else risk
 
 
 def label_risk(*labels: str) -> RiskLevel:

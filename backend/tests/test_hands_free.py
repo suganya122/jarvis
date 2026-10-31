@@ -366,6 +366,10 @@ def test_the_question_is_a_few_words_not_the_whole_card() -> None:
     pay = "Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr (₹77 + delivery and surge) (push button)"
     question = hands_free_turns.approval_question(_approval("purchase", pay))
     assert question == "This spends money: Pay ₹134 to Blinkit for 1 Amul Taaza Toned Milk 1 ltr. Go ahead?"
+    bill = "Pay TNPDCL electricity bill Rs. 1,245.00 for consumer 06-345-012-187 (INDU S), via BillDesk"
+    question = hands_free_turns.approval_question(_approval("purchase", bill))
+    said = "Pay TNPDCL electricity bill Rs. 1,245.00 for consumer 06-345-012-187"
+    assert question == f"This spends money: {said}. Go ahead?"  # the amount is kept, not cut at "Rs."
 
 
 def test_saying_yes_over_the_question_approves_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:

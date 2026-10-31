@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from contracts.common import Capability
+from core import tool_exec
 from core.config import Settings
 from models.fake import FakeProvider, FakeStep
 from tests.conftest import Harness, handshake, make_harness
@@ -169,28 +170,43 @@ def test_destructive_and_purchase_always_ask_and_cannot_be_remembered(make: Make
     assert len(tools["note"].runs) == 1
 
 
-def test_one_yes_pays_for_the_whole_checkout_but_not_more_or_the_next_order(make: Make) -> None:
-    """Ordering on Blinkit asked "This spends money" at every step. Now the first yes, with the
-    amount, covers the rest of that payment; a bigger amount, or a new request, asks again."""
+def test_one_yes_per_payment_even_when_it_goes_on_after_the_otp(
+    make: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ordering on Blinkit asked "This spends money" at every step, and paying a bill asked again
+    after the user typed the OTP. Now one yes, with the amount, covers that payment's steps; a
+    bigger or another amount asks, and so does the same amount once some minutes have passed."""
     script = [
-        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134 to Blinkit (₹77 + fees)"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹1,245.00 to TNPDCL (₹1,200 + fees)"})]),
         FakeStep(tool_calls=[("buy", {"value": "Pay now"})]),
-        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134 with the HDFC card"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay Rs. 1245 with the HDFC card"})]),
         FakeStep(tool_calls=[("buy", {"value": "Pay ₹2,000"})]),
-        FakeStep(text="Ordered."),
-        FakeStep(tool_calls=[("buy", {"value": "Pay ₹134"})]),
-        FakeStep(text="Ordered again."),
+        FakeStep(text="Type the OTP and tell me."),
+        FakeStep(tool_calls=[("buy", {"value": "Submit the OTP to pay ₹1,245.00"})]),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹349 to Airtel"})]),
+        FakeStep(text="Paid."),
+        FakeStep(tool_calls=[("buy", {"value": "Pay ₹1,245.00 to TNPDCL"})]),
+        FakeStep(text="Paid again."),
     ]
     harness, tools, _ = make(script)
     asked: list[str] = []
+
+    def ask(e: dict[str, Any]) -> tuple[bool, bool]:
+        return asked.append(e["summary"]) is None, False
+
     with harness.ws() as ws:
         handshake(ws)
-        first = turn(ws, "order milk", approve=lambda e: (asked.append(e["summary"]) is None, False))
-        session = of(first, "chat.started")[0]["session_id"]
-        turn(ws, "order it again", approve=lambda e: (asked.append(e["summary"]) is None, False),
-             session_id=session, request_id="r2")  # fmt: skip
-    assert asked == ["buy Pay ₹134 to Blinkit (₹77 + fees)", "buy Pay ₹2,000", "buy Pay ₹134"]
-    assert len(tools["buy"].runs) == 5
+        session = of(turn(ws, "pay my EB bill", approve=ask), "chat.started")[0]["session_id"]
+        turn(ws, "done, I typed the OTP", approve=ask, session_id=session, request_id="r2")
+        monkeypatch.setattr(tool_exec, "PAYMENT_CARRY_S", 0.0)
+        turn(ws, "pay it again", approve=ask, session_id=session, request_id="r3")
+    assert asked == [
+        "buy Pay ₹1,245.00 to TNPDCL (₹1,200 + fees)",
+        "buy Pay ₹2,000",
+        "buy Pay ₹349 to Airtel",
+        "buy Pay ₹1,245.00 to TNPDCL",
+    ]
+    assert len(tools["buy"].runs) == 7
 
 
 def test_capability_turned_off_is_denied_without_asking(make: Make) -> None:
@@ -243,25 +259,54 @@ def test_unknown_tool_gets_an_error_result(make: Make) -> None:
     assert "Unknown tool" in last_results(provider)[0]["output"]
 
 
-def test_identical_repeated_calls_stop_the_turn(make: Make) -> None:
-    script = [FakeStep(tool_calls=[("current_time", {})]) for _ in range(5)]
+def test_identical_repeated_calls_stop_the_turn_and_say_so(make: Make) -> None:
+    script = [FakeStep(tool_calls=[("peek", {})]) for _ in range(5)]
     harness, _, _ = make(script)
     with harness.ws() as ws:
         handshake(ws)
         events = turn(ws, "loop")
     assert of(events, "chat.done")[0]["stop_reason"] == "loop_detected"
     assert len(of(events, "tool.finished")) == 2  # max_identical_calls default
+    assert "same result" in "".join(e["text"] for e in of(events, "chat.delta"))
 
 
-def test_step_limit(make: Make) -> None:
+def test_reading_a_page_again_after_it_changed_is_not_a_loop(make: Make) -> None:
+    """Recharging on Airtel stopped right after the user's yes: reading the window a third time,
+    after a click had changed the page, was taken for a loop."""
+    script = [*(FakeStep(tool_calls=[("peek", {})]) for _ in range(4)), FakeStep(text="Recharged.")]
+    harness, tools, _ = make(script)
+    pages = iter(["plans", "number", "payment", "done"])
+    peek = tools["peek"]
+    real_run = peek.run
+
+    async def run(args: dict[str, Any], ctx: Any) -> Any:
+        peek._output = next(pages)
+        return await real_run(args, ctx)
+
+    peek.run = run  # type: ignore[method-assign]
+    with harness.ws() as ws:
+        handshake(ws)
+        events = turn(ws, "recharge")
+    assert of(events, "chat.done")[0]["stop_reason"] == "end_turn"
+    assert len(of(events, "tool.finished")) == 4
+
+
+def test_step_limit_stops_and_says_how_to_go_on(make: Make) -> None:
     settings = Settings()
     settings.agent.max_steps = 2
     script = [FakeStep(tool_calls=[("current_time", {"n": i})]) for i in range(5)]  # distinct args
-    harness, _, _ = make(script, settings)
+    harness, _, provider = make(script, settings)
     with harness.ws() as ws:
         handshake(ws)
         events = turn(ws, "go")
     assert of(events, "chat.done")[0]["stop_reason"] == "step_limit"
+    said = "".join(e["text"] for e in of(events, "chat.delta"))
+    assert "carry on" in said
+    with harness.ws() as ws:
+        handshake(ws)
+        session = of(events, "chat.started")[0]["session_id"]
+        turn(ws, "carry on", session_id=session, request_id="r2")
+    assert said in [m.text for m in provider.requests[-1].messages]  # it knows where it stopped
 
 
 def test_cut_off_tool_call_is_never_run(make: Make) -> None:

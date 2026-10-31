@@ -59,6 +59,9 @@ class IdMap:
     def short_for(self, real: str) -> str | None:
         return self._by_real.get(real)
 
+    def known(self, short: str, kind: Literal["w", "e"]) -> bool:
+        return short.strip() in self._short and short.strip().startswith(kind)
+
     def resolve(self, short: str, kind: Literal["w", "e"]) -> tuple[str, str]:
         found = self._short.get(short.strip())
         if found is None or not short.strip().startswith(kind):
@@ -100,10 +103,30 @@ class HandsEnv:
 
     def element(self, ref: ElementRef) -> tuple[str, str, str]:
         if isinstance(ref, str):
+            if not self.ids.known(ref, "e") and (named := self._named(ref)):
+                return named
             real, label = self.ids.resolve(ref, "e")
             return real, label, ref.strip()
         wreal, wlabel, wshort = self.window(ref.window)
-        e = find_element(self.hands.find_elements(wreal, ref.name, 50), ref)
+        found = find_element(self.hands.find_elements(wreal, ref.name, 50), ref)
+        return self._add_element(found, wlabel, wshort)
+
+    def _named(self, name: str) -> tuple[str, str, str] | None:
+        """A control given by its name instead of its id ('Pay Now' for 'e7'): the one control with
+        that name in the active window, as it is now (the page may have changed since it was read)."""
+        window = next((w for w in self.hands.list_windows() if w.focused), None)
+        wanted = " ".join(name.split()).casefold()
+        if window is None or not wanted:
+            return None
+        found = self.hands.find_elements(window.window_id, name.strip(), 50)
+        same = [e for e in found if " ".join(e.name.split()).casefold() == wanted]
+        if len(same) != 1:
+            return None
+        label = f"{window.app} — {window.title}" if window.title else window.app
+        wshort = self.ids.add("w", window.window_id, label, window_meta(window.app, window.title))
+        return self._add_element(same[0], label, wshort)
+
+    def _add_element(self, e: Any, wlabel: str, wshort: str) -> tuple[str, str, str]:
         meta = element_meta(e.role, e.name, self.ids.meta(wshort))
         short = self.ids.add("e", e.element_id, f"{e.role} '{e.name}' in {wlabel}", meta)
         return e.element_id, f"{e.role} '{e.name}' in {wlabel}", short

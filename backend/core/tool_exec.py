@@ -43,9 +43,26 @@ class ChatPermissions:
     """The user's latest request text (the context guard checks what they named)."""
     said_yes: bool = False
     """That request was a yes to a question it had just asked ("Shall I?"): see policy.decide."""
-    paid_up_to: float | None = None
-    """In this request the user said yes to paying up to this amount: later steps of that payment
-    that show no more don't ask again. Starts empty with every request."""
+    paid: list[tuple[str, float, float]] = field(default_factory=list)
+    """(request id, amount, when) for each payment the user said yes to: see payment_approved."""
+
+
+PAYMENT_CARRY_S = 600.0
+"""How long a yes to paying an amount also covers that payment's steps in the next requests."""
+
+
+def payment_approved(perms: ChatPermissions, request_id: str, summary: str) -> bool:
+    """One yes per payment. In the same request it covers the next steps that show no more (Proceed
+    to pay, then Pay now). For a few minutes after, it also covers steps showing exactly that
+    amount, as the payment goes on after the user's reply (the OTP, the UPI ID it asked for)."""
+    shown = max(amounts(summary), default=None)
+    now = time.monotonic()
+    for rid, amount, when in perms.paid:
+        if rid == request_id and (shown is None or shown <= amount):
+            return True
+        if shown == amount and now - when < PAYMENT_CARRY_S:
+            return True
+    return False
 
 
 @dataclass
@@ -192,8 +209,7 @@ class ToolExecutor:
             remote=perms.remote,
             full_automation=settings.full_automation,
             consented=perms.said_yes and not background,
-            payment_approved=perms.paid_up_to is not None
-            and max(amounts(assessment.summary), default=0.0) <= perms.paid_up_to,
+            payment_approved=payment_approved(perms, request_id, assessment.summary),
         )
         await self._store.audit(
             "assistant",
@@ -314,7 +330,9 @@ class ToolExecutor:
         if outcome.remember:
             perms.grants.add(call.name)
         if assessment.risk is RiskLevel.PURCHASE:
-            perms.paid_up_to = max([perms.paid_up_to or 0.0, *amounts(assessment.summary)])
+            now = time.monotonic()
+            perms.paid = [p for p in perms.paid if now - p[2] < PAYMENT_CARRY_S]
+            perms.paid.append((request_id, max(amounts(assessment.summary), default=0.0), now))
         return None
 
     def _fail(self, call: ToolCallRequested, status: ToolStatus, text: str) -> CallOutcome:
